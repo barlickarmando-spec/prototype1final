@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   getOccupations,
@@ -12,7 +12,7 @@ import {
 } from "../lib/affordability";
 
 const DEFAULT_INPUTS: UserInputs = {
-  age: 25,
+  age: 0,
   locationCertainty: "sure",
   selectedStates: [],
   householdType: "single",
@@ -24,11 +24,11 @@ const DEFAULT_INPUTS: UserInputs = {
   partnerIncomeSource: "occupation",
   partnerSalaryOverride: undefined,
   studentLoanBalance: 0,
-  studentLoanRate: 0.063,
+  studentLoanRate: 0,
   creditCardBalance: 0,
-  creditCardApr: 0.216,
-  savingsRate: 0.03,
-  allocationPercent: 0.8,
+  creditCardApr: 0,
+  savingsRate: 0,
+  allocationPercent: 0,
   homeSize: "medium",
   strategyMode: "auto",
   advanced: {
@@ -53,6 +53,13 @@ export default function Home() {
   const states = useMemo(() => getStates(), []);
   const occupations = useMemo(() => getOccupations(), []);
 
+  // Get state flag image URL
+  const getStateFlagUrl = (stateAbbr: string): string => {
+    const abbrLower = stateAbbr.toLowerCase();
+    // Using GitHub CDN for US state flags
+    return `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+  };
+
   const filteredStates = useMemo(() => {
     if (!stateQuery) return states;
     return states.filter(
@@ -71,6 +78,71 @@ export default function Home() {
     );
   }, [occupations, occupationQuery]);
 
+  const filteredPartnerOccupations = useMemo(() => {
+    if (!partnerOccupationQuery) return occupations;
+    return occupations.filter(
+      (occupation) =>
+        occupation.label.toLowerCase().includes(partnerOccupationQuery.toLowerCase()) ||
+        occupation.value.toLowerCase().includes(partnerOccupationQuery.toLowerCase()),
+    );
+  }, [occupations, partnerOccupationQuery]);
+
+  const selectedOccupationLabel = occupations.find(o => o.value === inputs.occupation)?.label || "";
+  const selectedPartnerOccupationLabel = occupations.find(o => o.value === inputs.partnerOccupation)?.label || "";
+
+  // Refs for dropdown containers to detect outside clicks
+  const stateDropdownRef = useRef<HTMLDivElement>(null);
+  const occupationDropdownRef = useRef<HTMLDivElement>(null);
+  const partnerOccupationDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        stateDropdownRef.current &&
+        !stateDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowStateDropdown(false);
+      }
+      if (
+        occupationDropdownRef.current &&
+        !occupationDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowOccupationDropdown(false);
+      }
+      if (
+        partnerOccupationDropdownRef.current &&
+        !partnerOccupationDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowPartnerOccupationDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Close other dropdowns when opening a new one
+  const openStateDropdown = () => {
+    setShowOccupationDropdown(false);
+    setShowPartnerOccupationDropdown(false);
+    setShowStateDropdown(true);
+  };
+
+  const openOccupationDropdown = () => {
+    setShowStateDropdown(false);
+    setShowPartnerOccupationDropdown(false);
+    setShowOccupationDropdown(true);
+  };
+
+  const openPartnerOccupationDropdown = () => {
+    setShowStateDropdown(false);
+    setShowOccupationDropdown(false);
+    setShowPartnerOccupationDropdown(true);
+  };
+
   const updateInputs = (patch: Partial<UserInputs>) => {
     setInputs((current) => ({ ...current, ...patch }));
   };
@@ -82,6 +154,33 @@ export default function Home() {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return parsed / 100;
+  };
+
+  // Handle number input to replace "0" when user starts typing (allows decimals)
+  const handleNumberChange = (
+    value: string,
+    currentValue: number,
+    updateFn: (value: number) => void,
+  ) => {
+    // Allow empty string
+    if (value === "") {
+      updateFn(0);
+      return;
+    }
+    // If current value is 0 and new value starts with "0" followed by digits (but not decimals), strip leading zero
+    if (currentValue === 0 && value.length > 1 && value.startsWith("0") && /^0\d+$/.test(value) && !value.includes(".")) {
+      const withoutZero = value.substring(1);
+      const parsed = Number(withoutZero);
+      if (Number.isFinite(parsed)) {
+        updateFn(parsed);
+        return;
+      }
+    }
+    // Otherwise, handle normally (allows decimals)
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      updateFn(parsed);
+    }
   };
 
   const updateAdvanced = (patch: Partial<UserInputs["advanced"]>) => {
@@ -101,6 +200,8 @@ export default function Home() {
       updateInputs({
         selectedStates: inputs.selectedStates.filter((s) => s !== stateValue),
       });
+      // Close dropdown after deselecting if it's the last item or if deselecting via × button
+      setShowStateDropdown(false);
     } else {
       updateInputs({
         selectedStates: [...inputs.selectedStates, stateValue],
@@ -157,16 +258,16 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-blue-900">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-        <header className="space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <header className="space-y-3 rounded-3xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-white to-red-600 p-8 shadow-xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white drop-shadow-md">
             Affordability Prototype
           </p>
-          <h1 className="text-4xl font-semibold text-slate-900">
+          <h1 className="text-4xl font-bold text-white drop-shadow-sm">
             Estimate your path to home ownership and debt freedom
           </h1>
-          <p className="max-w-3xl text-base text-slate-600">
+          <p className="max-w-3xl text-base text-blue-100 font-medium">
             Start with the core inputs below. After submitting, you will see a
             state-by-state overview, then refine your selections and generate a
             final decision-grade summary.
@@ -174,10 +275,11 @@ export default function Home() {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-12">
-          <section className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          {/* Location Certainty */}
+          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">1. Location certainty</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-xl font-semibold text-slate-900">1. Location certainty</h2>
+              <p className="text-sm text-slate-900">
                 Choose how specific you are about where you want to live.
               </p>
             </div>
@@ -185,7 +287,7 @@ export default function Home() {
               {(
                 [
                   ["sure", "I know exactly where I want to live"],
-                  ["deciding", "I’m deciding between a few places"],
+                  ["deciding", "I'm deciding between a few places"],
                   ["unknown", "I have no idea (analyze all states)"],
                 ] as Array<[LocationCertainty, string]>
               ).map(([value, label]) => (
@@ -194,7 +296,7 @@ export default function Home() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                     inputs.locationCertainty === value
                       ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      : "border-slate-200 bg-white text-slate-900"
                   }`}
                 >
                   <input
@@ -210,105 +312,135 @@ export default function Home() {
               ))}
             </div>
             <div className="space-y-3">
-              <label className="text-sm font-semibold text-slate-700">
+              <label className="text-sm font-semibold text-slate-900">
                 Select state(s)
               </label>
-              <div className="relative">
+              <div className="relative" ref={stateDropdownRef}>
                 <input
                   type="text"
                   value={stateQuery}
                   onChange={(event) => {
                     setStateQuery(event.target.value);
-                    setShowStateDropdown(true);
+                    openStateDropdown();
                   }}
-                  onFocus={() => setShowStateDropdown(true)}
+                  onFocus={openStateDropdown}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") {
                       setShowStateDropdown(false);
                     }
                   }}
                   placeholder="Search states"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                  disabled={inputs.locationCertainty === "unknown"}
                 />
-                {showStateDropdown && (
-                  <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
+                {showStateDropdown && inputs.locationCertainty !== "unknown" && (
+                  <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
                     {filteredStates.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-slate-500">
+                      <p className="px-3 py-2 text-sm text-slate-900">
                         No matching states.
                       </p>
                     )}
                     {filteredStates.map((state) => {
-                      const selected =
-                        inputs.locationCertainty === "unknown"
-                          ? true
-                          : inputs.selectedStates.includes(state.value);
+                      const selected = inputs.selectedStates.includes(state.value);
                       return (
                         <button
                           key={state.value}
                           type="button"
                           onMouseDown={(event) => {
                             event.preventDefault();
-                            if (inputs.locationCertainty !== "unknown") {
-                              handleStateToggle(state.value);
-                            }
+                            handleStateToggle(state.value);
                           }}
-                          disabled={inputs.locationCertainty === "unknown"}
                           className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
                             selected
-                              ? "bg-slate-900 text-white"
-                              : "text-slate-600 hover:bg-slate-100"
+                              ? "bg-blue-100 text-blue-900 border-2 border-blue-500"
+                              : "hover:bg-slate-100 text-slate-900"
                           }`}
                         >
-                          <span>
-                            {state.label} ({state.value})
+                          <span className="flex items-center gap-2">
+                            <img
+                              src={getStateFlagUrl(state.value)}
+                              alt={`${state.label} flag`}
+                              className="h-5 w-auto border border-gray-200 rounded"
+                              onError={(e) => {
+                                // Fallback if image fails to load - hide the image
+                                const img = e.target as HTMLImageElement;
+                                img.style.display = "none";
+                              }}
+                            />
+                            <span>{state.label}</span>
                           </span>
-                          {selected && <span className="text-xs">Selected</span>}
+                          {selected && <span>✓</span>}
                         </button>
                       );
                     })}
                   </div>
                 )}
               </div>
-              {inputs.selectedStates.length > 0 &&
-                inputs.locationCertainty !== "unknown" && (
-                  <div className="flex flex-wrap gap-2">
-                    {inputs.selectedStates.map((abbr) => {
-                      const match = states.find((state) => state.value === abbr);
-                      return (
+              {inputs.selectedStates.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {inputs.selectedStates.map((abbr) => {
+                    const state = states.find((s) => s.value === abbr);
+                    return (
+                      <span
+                        key={abbr}
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-900"
+                      >
+                        {state?.label}
                         <button
-                          key={abbr}
                           type="button"
                           onClick={() => handleStateToggle(abbr)}
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
+                          className="text-slate-900 hover:text-slate-900"
                         >
-                          {match ? `${match.label} (${abbr})` : abbr} ✕
+                          ×
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
-              {inputs.locationCertainty === "unknown" && (
-                <p className="text-xs text-slate-500">
-                  All states will be analyzed. State selection is disabled.
-                </p>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </section>
 
-          <section className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          {/* Age Input */}
+          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">2. Household profile</h2>
-              <p className="text-sm text-slate-500">
-                Define your current household structure and occupations.
+              <h2 className="text-xl font-semibold text-slate-900">2. Your Age</h2>
+              <p className="text-sm text-slate-900">
+                Enter your current age to see when you'll reach key milestones.
               </p>
             </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-900">
+                Current age
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                max="100"
+                value={inputs.age}
+                onChange={(e) =>
+                  handleNumberChange(e.target.value, inputs.age, (val) =>
+                    updateInputs({ age: Math.max(0, Math.min(100, val)) }),
+                  )
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                placeholder="25"
+              />
+            </div>
+          </section>
 
+          {/* Household */}
+          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-slate-900">3. Household</h2>
+            </div>
             <div className="grid gap-4 sm:grid-cols-3">
               {(
                 [
-                  ["single", "Single/Independent"],
-                  ["marriedOneIncome", "Married/Coupled: One Income"],
-                  ["marriedTwoIncome", "Married/Coupled: Two Earners"],
+                  ["single", "Single"],
+                  ["marriedOneIncome", "Married (one income)"],
+                  ["marriedTwoIncome", "Married (two incomes)"],
                 ] as Array<[HouseholdType, string]>
               ).map(([value, label]) => (
                 <label
@@ -316,7 +448,7 @@ export default function Home() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                     inputs.householdType === value
                       ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      : "border-slate-200 bg-white text-slate-900"
                   }`}
                 >
                   <input
@@ -331,568 +463,769 @@ export default function Home() {
                 </label>
               ))}
             </div>
-
-            <div className="grid gap-6 sm:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">Current age</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={inputs.age}
-                  onChange={(event) =>
-                    updateInputs({ age: Number(event.target.value) })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
+            <div>
+              <label className="text-sm font-semibold text-slate-900">
+                Number of kids <span className="text-slate-400 text-xs">(optional)</span>
               </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700"># of kids</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={inputs.kids}
-                  onChange={(event) =>
-                    updateInputs({ kids: Number(event.target.value) })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-              <div className="space-y-4 text-sm">
-                <div className="space-y-2">
-                  <span className="font-semibold text-slate-700">
-                    Primary income input
-                  </span>
-                  <div className="flex flex-wrap gap-3">
-                    {(
-                      [
-                        ["occupation", "Use occupation"],
-                        ["salary", "Enter salary"],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <label
-                        key={value}
-                        className={`flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${
-                          inputs.incomeSource === value
-                            ? "border-slate-900 bg-slate-900 text-white"
-                            : "border-slate-200 text-slate-600"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="incomeSource"
-                          value={value}
-                          className="hidden"
-                          checked={inputs.incomeSource === value}
-                          onChange={() => updateInputs({ incomeSource: value })}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {inputs.incomeSource === "occupation" && (
-                  <label className="space-y-2 text-sm">
-                    <span className="font-semibold text-slate-700">
-                      Primary occupation
-                    </span>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={occupationQuery}
-                        onChange={(event) => {
-                          setOccupationQuery(event.target.value);
-                          setShowOccupationDropdown(true);
-                        }}
-                        onFocus={() => setShowOccupationDropdown(true)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            setShowOccupationDropdown(false);
-                          }
-                        }}
-                        placeholder="Search occupations"
-                        className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                      />
-                      {showOccupationDropdown && (
-                        <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
-                          {filteredOccupations.length === 0 && (
-                            <p className="px-3 py-2 text-sm text-slate-500">
-                              No matching occupations.
-                            </p>
-                          )}
-                          {filteredOccupations.map((occupation) => (
-                            <button
-                              key={occupation.value}
-                              type="button"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                updateInputs({ occupation: occupation.value });
-                                setOccupationQuery(
-                                  `${occupation.label} (${occupation.value})`,
-                                );
-                                setShowOccupationDropdown(false);
-                              }}
-                              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
-                            >
-                              <span>
-                                {occupation.label} ({occupation.value})
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                )}
-                {inputs.incomeSource === "salary" && (
-                  <label className="space-y-2 text-sm">
-                    <span className="font-semibold text-slate-700">
-                      Primary salary
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Enter annual salary"
-                      value={inputs.salaryOverride ?? ""}
-                      onChange={(event) =>
-                        updateInputs({
-                          salaryOverride:
-                            Number(event.target.value) || undefined,
-                        })
-                      }
-                      className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                    />
-                  </label>
-                )}
-              </div>
-              {inputs.householdType === "marriedTwoIncome" && (
-                <div className="space-y-4 text-sm">
-                  <div className="space-y-2">
-                    <span className="font-semibold text-slate-700">
-                      Partner income input
-                    </span>
-                    <div className="flex flex-wrap gap-3">
-                      {(
-                        [
-                          ["occupation", "Use occupation"],
-                          ["salary", "Enter salary"],
-                        ] as const
-                      ).map(([value, label]) => (
-                        <label
-                          key={value}
-                          className={`flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${
-                            inputs.partnerIncomeSource === value
-                              ? "border-slate-900 bg-slate-900 text-white"
-                              : "border-slate-200 text-slate-600"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="partnerIncomeSource"
-                            value={value}
-                            className="hidden"
-                            checked={inputs.partnerIncomeSource === value}
-                            onChange={() =>
-                              updateInputs({ partnerIncomeSource: value })
-                            }
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  {inputs.partnerIncomeSource === "occupation" && (
-                    <label className="space-y-2 text-sm">
-                      <span className="font-semibold text-slate-700">
-                        Partner occupation
-                      </span>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={partnerOccupationQuery}
-                          onChange={(event) => {
-                            setPartnerOccupationQuery(event.target.value);
-                            setShowPartnerOccupationDropdown(true);
-                          }}
-                          onFocus={() => setShowPartnerOccupationDropdown(true)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") {
-                              setShowPartnerOccupationDropdown(false);
-                            }
-                          }}
-                          placeholder="Search occupations"
-                          className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                        />
-                        {showPartnerOccupationDropdown && (
-                          <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
-                            {filteredOccupations.length === 0 && (
-                              <p className="px-3 py-2 text-sm text-slate-500">
-                                No matching occupations.
-                              </p>
-                            )}
-                            {filteredOccupations.map((occupation) => (
-                              <button
-                                key={occupation.value}
-                                type="button"
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  updateInputs({
-                                    partnerOccupation: occupation.value,
-                                  });
-                                  setPartnerOccupationQuery(
-                                    `${occupation.label} (${occupation.value})`,
-                                  );
-                                  setShowPartnerOccupationDropdown(false);
-                                }}
-                                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
-                              >
-                                <span>
-                                  {occupation.label} ({occupation.value})
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                  )}
-                  {inputs.partnerIncomeSource === "salary" && (
-                    <label className="space-y-2 text-sm">
-                      <span className="font-semibold text-slate-700">
-                        Partner salary
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        placeholder="Enter annual salary"
-                        value={inputs.partnerSalaryOverride ?? ""}
-                        onChange={(event) =>
-                          updateInputs({
-                            partnerSalaryOverride:
-                              Number(event.target.value) || undefined,
-                          })
-                        }
-                        className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                      />
-                    </label>
-                  )}
-                </div>
-              )}
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={inputs.kids || ""}
+                onChange={(e) =>
+                  handleNumberChange(e.target.value, inputs.kids || 0, (val) =>
+                    updateInputs({ kids: val }),
+                  )
+                }
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 2"
+              />
             </div>
           </section>
 
-          <section className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          {/* Income */}
+          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">3. Debts & strategy</h2>
-              <p className="text-sm text-slate-500">
-                Include current balances and how aggressively you want to move.
-              </p>
+              <h2 className="text-xl font-semibold text-slate-900">4. Income</h2>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Student loan balance
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  value={inputs.studentLoanBalance}
-                  onChange={(event) =>
-                    updateInputs({
-                      studentLoanBalance: Number(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Student loan interest rate
-                </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={percentToInput(inputs.studentLoanRate)}
-                  onChange={(event) =>
-                    updateInputs({
-                      studentLoanRate: inputToPercent(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Credit card balance
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  value={inputs.creditCardBalance}
-                  onChange={(event) =>
-                    updateInputs({ creditCardBalance: Number(event.target.value) })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Credit card APR
-                </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={percentToInput(inputs.creditCardApr)}
-                  onChange={(event) =>
-                    updateInputs({
-                      creditCardApr: inputToPercent(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  % of disposable income willing to allocate
-                </span>
-                <input
-                  type="number"
-                  step="1"
-                  min={0}
-                  max={100}
-                  value={percentToInput(inputs.allocationPercent)}
-                  onChange={(event) =>
-                    updateInputs({
-                      allocationPercent: inputToPercent(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
-              </label>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-4">
-              {(
-                [
-                  ["auto", "Auto (best)"],
-                  ["conservative", "Conservative"],
-                  ["balanced", "Balanced"],
-                  ["aggressive", "Aggressive"],
-                ] as Array<[StrategyMode, string]>
-              ).map(([value, label]) => (
+            
+            {/* Primary Income */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-900">Primary income</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <label
-                  key={value}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-                    inputs.strategyMode === value
+                    inputs.incomeSource === "occupation"
                       ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      : "border-slate-200 bg-white text-slate-900"
                   }`}
                 >
                   <input
                     type="radio"
-                    name="strategy"
+                    name="incomeSource"
+                    value="occupation"
+                    className="hidden"
+                    checked={inputs.incomeSource === "occupation"}
+                    onChange={() => updateInputs({ incomeSource: "occupation" })}
+                  />
+                  By occupation
+                </label>
+                <label
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                    inputs.incomeSource === "salary"
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-900"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="incomeSource"
+                    value="salary"
+                    className="hidden"
+                    checked={inputs.incomeSource === "salary"}
+                    onChange={() => updateInputs({ incomeSource: "salary" })}
+                  />
+                  Manual salary
+                </label>
+              </div>
+              
+              {inputs.incomeSource === "occupation" && (
+                <div className="relative" ref={occupationDropdownRef}>
+                  <input
+                    type="text"
+                    value={occupationQuery}
+                    onChange={(event) => {
+                      setOccupationQuery(event.target.value);
+                      openOccupationDropdown();
+                    }}
+                    onFocus={openOccupationDropdown}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setShowOccupationDropdown(false);
+                      }
+                    }}
+                    placeholder="Search occupations"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                  />
+                  {selectedOccupationLabel && !showOccupationDropdown && (
+                    <div className="mt-2 text-sm text-slate-800">
+                      Selected: {selectedOccupationLabel}
+                    </div>
+                  )}
+                  {showOccupationDropdown && (
+                    <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
+                      {filteredOccupations.length === 0 && (
+                        <p className="px-3 py-2 text-sm text-slate-900">
+                          No matching occupations.
+                        </p>
+                      )}
+                      {filteredOccupations.map((occupation) => (
+                        <button
+                          key={occupation.value}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            updateInputs({ occupation: occupation.value });
+                            setOccupationQuery(occupation.label);
+                            setShowOccupationDropdown(false);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                            inputs.occupation === occupation.value
+                              ? "bg-slate-900 text-white"
+                              : "hover:bg-slate-100 text-slate-900"
+                          }`}
+                        >
+                          <span>{occupation.label}</span>
+                          {inputs.occupation === occupation.value && <span>✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {inputs.incomeSource === "salary" && (
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="e.g., 75000"
+                  value={inputs.salaryOverride || ""}
+                  onChange={(e) =>
+                    handleNumberChange(
+                      e.target.value,
+                      inputs.salaryOverride || 0,
+                      (val) => updateInputs({ salaryOverride: val === 0 ? undefined : val }),
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                />
+              )}
+            </div>
+
+            {/* Partner Income */}
+            {inputs.householdType === "marriedTwoIncome" && (
+              <div className="space-y-4 border-t border-slate-100 pt-6">
+                <h3 className="text-sm font-semibold text-slate-900">Partner income</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                      inputs.partnerIncomeSource === "occupation"
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-900"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="partnerIncomeSource"
+                      value="occupation"
+                      className="hidden"
+                      checked={inputs.partnerIncomeSource === "occupation"}
+                      onChange={() => updateInputs({ partnerIncomeSource: "occupation" })}
+                    />
+                    By occupation
+                  </label>
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                      inputs.partnerIncomeSource === "salary"
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-900"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="partnerIncomeSource"
+                      value="salary"
+                      className="hidden"
+                      checked={inputs.partnerIncomeSource === "salary"}
+                      onChange={() => updateInputs({ partnerIncomeSource: "salary" })}
+                    />
+                    Manual salary
+                  </label>
+                </div>
+                
+                {inputs.partnerIncomeSource === "occupation" && (
+                  <div className="relative" ref={partnerOccupationDropdownRef}>
+                    <input
+                      type="text"
+                      value={partnerOccupationQuery}
+                      onChange={(event) => {
+                        setPartnerOccupationQuery(event.target.value);
+                        openPartnerOccupationDropdown();
+                      }}
+                      onFocus={openPartnerOccupationDropdown}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setShowPartnerOccupationDropdown(false);
+                        }
+                      }}
+                      placeholder="Search partner occupations"
+                      className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                    />
+                    {selectedPartnerOccupationLabel && !showPartnerOccupationDropdown && (
+                      <div className="mt-2 text-sm text-slate-800">
+                        Selected: {selectedPartnerOccupationLabel}
+                      </div>
+                    )}
+                    {showPartnerOccupationDropdown && (
+                      <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
+                        {filteredPartnerOccupations.length === 0 && (
+                          <p className="px-3 py-2 text-sm text-slate-900">
+                            No matching occupations.
+                          </p>
+                        )}
+                        {filteredPartnerOccupations.map((occupation) => (
+                          <button
+                            key={occupation.value}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              updateInputs({ partnerOccupation: occupation.value });
+                              setPartnerOccupationQuery(occupation.label);
+                              setShowPartnerOccupationDropdown(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                              inputs.partnerOccupation === occupation.value
+                                ? "bg-slate-900 text-white"
+                                : "hover:bg-slate-100 text-slate-900"
+                            }`}
+                          >
+                            <span>{occupation.label}</span>
+                            {inputs.partnerOccupation === occupation.value && <span>✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {inputs.partnerIncomeSource === "salary" && (
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="e.g., 65000"
+                    value={inputs.partnerSalaryOverride || ""}
+                    onChange={(e) =>
+                      handleNumberChange(
+                        e.target.value,
+                        inputs.partnerSalaryOverride || 0,
+                        (val) => updateInputs({ partnerSalaryOverride: val === 0 ? undefined : val }),
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                  />
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Debt & Savings */}
+          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-slate-900">5. Debt & Savings</h2>
+            </div>
+            
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Student loan balance <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.studentLoanBalance || ""}
+                  onChange={(e) =>
+                    handleNumberChange(e.target.value, inputs.studentLoanBalance || 0, (val) =>
+                      updateInputs({ studentLoanBalance: val }),
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 30000"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Student loan rate <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.studentLoanRate ? inputs.studentLoanRate * 100 : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                    updateInputs({ studentLoanRate: val });
+                  }}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 6.3"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Credit card balance <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.creditCardBalance || ""}
+                  onChange={(e) =>
+                    handleNumberChange(e.target.value, inputs.creditCardBalance || 0, (val) =>
+                      updateInputs({ creditCardBalance: val }),
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 5000"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Credit card APR <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.creditCardApr ? inputs.creditCardApr * 100 : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                    updateInputs({ creditCardApr: val });
+                  }}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 21.6"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Savings rate (annual) <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.savingsRate ? inputs.savingsRate * 100 : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                    updateInputs({ savingsRate: val });
+                  }}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 3.5"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-slate-900">
+                  Allocation % (of disposable income) <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  max="100"
+                  value={inputs.allocationPercent ? inputs.allocationPercent * 100 : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                    updateInputs({ allocationPercent: Math.min(1, Math.max(0, val)) });
+                  }}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  placeholder="e.g., 80"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Home Preferences */}
+          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-slate-900">6. Home preferences</h2>
+            </div>
+            
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(
+                [
+                  ["small", "Small"],
+                  ["medium", "Medium"],
+                  ["large", "Large"],
+                  ["veryLarge", "Very Large"],
+                ] as Array<[UserInputs["homeSize"], string]>
+              ).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                    inputs.homeSize === value
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-900"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="homeSize"
                     value={value}
                     className="hidden"
-                    checked={inputs.strategyMode === value}
-                    onChange={() => updateInputs({ strategyMode: value })}
+                    checked={inputs.homeSize === value}
+                    onChange={() => updateInputs({ homeSize: value })}
                   />
                   {label}
                 </label>
               ))}
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Savings account interest rate
-                </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={percentToInput(inputs.savingsRate)}
-                  onChange={(event) =>
-                    updateInputs({
-                      savingsRate: inputToPercent(event.target.value),
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                />
+            
+            <div>
+              <label className="text-sm font-semibold text-slate-900">
+                Strategy mode
               </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-semibold text-slate-700">
-                  Home size preference
-                </span>
-                <select
-                  value={inputs.homeSize}
-                  onChange={(event) =>
-                    updateInputs({
-                      homeSize: event.target.value as UserInputs["homeSize"],
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                >
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                  <option value="large">Large</option>
-                  <option value="veryLarge">Very large</option>
-                </select>
-              </label>
+              <div className="mt-2 grid gap-4 sm:grid-cols-4">
+                {(
+                  [
+                    ["auto", "Auto"],
+                    ["conservative", "Conservative"],
+                    ["balanced", "Balanced"],
+                    ["aggressive", "Aggressive"],
+                  ] as Array<[StrategyMode, string]>
+                ).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                      inputs.strategyMode === value
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-900"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="strategyMode"
+                      value={value}
+                      className="hidden"
+                      checked={inputs.strategyMode === value}
+                      onChange={() => updateInputs({ strategyMode: value })}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
           </section>
 
-          <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          {/* Advanced / Optional Inputs */}
+          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
             <button
               type="button"
-              onClick={() => setShowAdvanced((prev) => !prev)}
-              className="flex w-full items-center justify-between text-left text-base font-semibold"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex w-full items-center justify-between text-left"
             >
-              Advanced settings
-              <span className="text-sm text-slate-500">
-                {showAdvanced ? "Hide" : "Show"}
-              </span>
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-slate-900">7. Advanced settings</h2>
+                <p className="text-sm text-slate-900">
+                  Optional inputs for future planning and detailed assumptions
+                </p>
+              </div>
+              <svg
+                className={`h-5 w-5 text-slate-900 transition-transform ${
+                  showAdvanced ? "rotate-180" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </button>
+
             {showAdvanced && (
-              <div className="grid gap-6 sm:grid-cols-2">
-                <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={inputs.advanced.futureKids}
-                    onChange={(event) =>
-                      updateAdvanced({ futureKids: event.target.checked })
-                    }
-                  />
-                  Do you plan to have children?
-                </label>
-                {inputs.advanced.futureKids && (
-                  <div className="grid gap-4">
-                    <label className="space-y-2 text-sm">
-                      <span className="font-semibold text-slate-700">
-                        First child year
-                      </span>
-                      <input
-                        type="number"
-                        value={inputs.advanced.firstChildAge ?? ""}
-                        onChange={(event) =>
-                          updateAdvanced({
-                            firstChildAge: Number(event.target.value),
-                          })
-                        }
-                        className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm">
-                      <span className="font-semibold text-slate-700">
-                        Second child year
-                      </span>
-                      <input
-                        type="number"
-                        value={inputs.advanced.secondChildAge ?? ""}
-                        onChange={(event) =>
-                          updateAdvanced({
-                            secondChildAge: Number(event.target.value),
-                          })
-                        }
-                        className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                      />
-                    </label>
+              <div className="space-y-8 border-t border-slate-100 pt-6">
+                {/* Future Household Changes */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Future household changes
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-slate-800">
+                        Do you plan to have children?
+                      </label>
+                      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                        <label
+                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                            inputs.advanced.futureKids === true
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white text-slate-900"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="futureKids"
+                            value="yes"
+                            className="hidden"
+                            checked={inputs.advanced.futureKids === true}
+                            onChange={() =>
+                              updateAdvanced({ futureKids: true })
+                            }
+                          />
+                          Yes
+                        </label>
+                        <label
+                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                            inputs.advanced.futureKids === false
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white text-slate-900"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="futureKids"
+                            value="no"
+                            className="hidden"
+                            checked={inputs.advanced.futureKids === false}
+                            onChange={() =>
+                              updateAdvanced({ futureKids: false })
+                            }
+                          />
+                          No
+                        </label>
+                      </div>
+                    </div>
+
+                    {inputs.advanced.futureKids && (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="text-sm font-semibold text-slate-900">
+                            First child age <span className="text-slate-400 text-xs">(optional)</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="e.g., 28"
+                            value={inputs.advanced.firstChildAge || ""}
+                            onChange={(e) =>
+                              updateAdvanced({
+                                firstChildAge:
+                                  e.target.value === ""
+                                    ? undefined
+                                    : Number(e.target.value),
+                              })
+                            }
+                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-semibold text-slate-900">
+                            Second child age <span className="text-slate-400 text-xs">(optional)</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="e.g., 30"
+                            value={inputs.advanced.secondChildAge || ""}
+                            onChange={(e) =>
+                              updateAdvanced({
+                                secondChildAge:
+                                  e.target.value === ""
+                                    ? undefined
+                                    : Number(e.target.value),
+                              })
+                            }
+                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Partner Timing (only if single) */}
+                {inputs.householdType === "single" && (
+                  <div className="space-y-4 border-t border-slate-100 pt-6">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Partner timing
+                    </h3>
+                    <div>
+                      <label className="text-sm font-medium text-slate-800">
+                        Do you expect a financially merged partner later? <span className="text-slate-400 text-xs">(optional)</span>
+                      </label>
+                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                        {(
+                          [
+                            ["yes", "Yes"],
+                            ["no", "No"],
+                            ["already", "I Already Have One"],
+                          ] as Array<["yes" | "no" | "already", string]>
+                        ).map(([value, label]) => (
+                          <label
+                            key={value}
+                            className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                              inputs.advanced.partnerTiming === value
+                                ? "border-slate-900 bg-slate-900 text-white"
+                                : "border-slate-200 bg-white text-slate-900"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="partnerTiming"
+                              value={value}
+                              className="hidden"
+                              checked={inputs.advanced.partnerTiming === value}
+                              onChange={() =>
+                                updateAdvanced({
+                                  partnerTiming: value,
+                                  partnerAge:
+                                    value === "yes"
+                                      ? inputs.advanced.partnerAge || inputs.age
+                                      : undefined,
+                                })
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      {inputs.advanced.partnerTiming === "yes" && (
+                        <div className="mt-4">
+                          <label className="text-sm font-semibold text-slate-900">
+                            Expected age when partner joins <span className="text-slate-400 text-xs">(optional)</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder={`e.g., ${inputs.age || 30} (your current age)`}
+                            value={inputs.advanced.partnerAge || ""}
+                            onChange={(e) =>
+                              updateAdvanced({
+                                partnerAge:
+                                  e.target.value === ""
+                                    ? inputs.age || undefined
+                                    : Number(e.target.value),
+                              })
+                            }
+                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
-                <label className="space-y-2 text-sm">
-                  <span className="font-semibold text-slate-700">
-                    Partner timing (if single)
-                  </span>
-                  <select
-                    value={inputs.advanced.partnerTiming ?? ""}
-                    onChange={(event) =>
-                      updateAdvanced({
-                        partnerTiming: event.target.value as UserInputs["advanced"]["partnerTiming"],
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                  >
-                    <option value="">Select</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                    <option value="already">I already have one</option>
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="font-semibold text-slate-700">
-                    Expected partner age
-                  </span>
-                  <input
-                    type="number"
-                    value={inputs.advanced.partnerAge ?? ""}
-                    onChange={(event) =>
-                      updateAdvanced({ partnerAge: Number(event.target.value) })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="font-semibold text-slate-700">
-                    Estimate annual credit card debt refresh
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={inputs.advanced.annualCreditCardDebt ?? ""}
-                    onChange={(event) =>
-                      updateAdvanced({
-                        annualCreditCardDebt: Number(event.target.value),
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                  />
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="font-semibold text-slate-700">
-                    Student loan repayment style
-                  </span>
-                  <select
-                    value={inputs.advanced.studentLoanStyle ?? ""}
-                    onChange={(event) =>
-                      updateAdvanced({
-                        studentLoanStyle: event.target.value as UserInputs["advanced"]["studentLoanStyle"],
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2"
-                  >
-                    <option value="standard">Standard amortization</option>
-                    <option value="accelerated">Accelerated payoff</option>
-                    <option value="unsure">Not sure</option>
-                  </select>
-                </label>
-                <p className="text-xs text-slate-500 sm:col-span-2">
-                  Advanced inputs are saved and will be used for expanded
-                  modeling in the next iteration.
-                </p>
+
+                {/* Debt Behavior Assumptions */}
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Debt behavior assumptions
+                  </h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-900">
+                        Estimate Annual Credit Card Debt Value <span className="text-slate-400 text-xs">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="e.g., 2000"
+                        value={inputs.advanced.annualCreditCardDebt || ""}
+                        onChange={(e) =>
+                          updateAdvanced({
+                            annualCreditCardDebt:
+                              e.target.value === ""
+                                ? undefined
+                                : Number(e.target.value),
+                          })
+                        }
+                        className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-slate-900">
+                        Student loan repayment style <span className="text-slate-400 text-xs">(optional)</span>
+                      </label>
+                      <div className="mt-2 grid gap-2">
+                        {(
+                          [
+                            ["standard", "Standard amortization"],
+                            ["accelerated", "Accelerated payoff"],
+                            ["unsure", "Not Sure"],
+                          ] as Array<
+                            ["standard" | "accelerated" | "unsure", string]
+                          >
+                        ).map(([value, label]) => (
+                          <label
+                            key={value}
+                            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-2 text-sm font-medium transition ${
+                              inputs.advanced.studentLoanStyle === value
+                                ? "border-slate-900 bg-slate-900 text-white"
+                                : "border-slate-200 bg-white text-slate-900"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="studentLoanStyle"
+                              value={value}
+                              className="hidden"
+                              checked={
+                                inputs.advanced.studentLoanStyle === value
+                              }
+                              onChange={() =>
+                                updateAdvanced({ studentLoanStyle: value })
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Savings Assumptions */}
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Savings assumptions
+                  </h3>
+                  <div className="grid gap-4 sm:grid-cols-1">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-900">
+                        Savings account interest rate (annual) <span className="text-slate-400 text-xs">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={inputs.savingsRate ? inputs.savingsRate * 100 : ""}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                          updateInputs({ savingsRate: val });
+                        }}
+                        className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                        placeholder="e.g., 3.5"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </section>
 
-          <section className="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div>
-              <h3 className="text-base font-semibold">Ready for results?</h3>
-              <p className="text-sm text-slate-500">
-                You will get a high-level state overview before refining.
-              </p>
-              {formError && (
-                <p className="mt-2 text-sm font-medium text-rose-600">
-                  {formError}
-                </p>
-              )}
+          {formError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              {formError}
             </div>
-            <button
-              type="submit"
-              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white"
-            >
-              See results
-            </button>
-          </section>
+          )}
+
+          <button
+            type="submit"
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-red-600 px-6 py-4 text-base font-bold text-white transition hover:from-blue-700 hover:to-red-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+          >
+            Calculate Affordability
+          </button>
         </form>
       </main>
     </div>
