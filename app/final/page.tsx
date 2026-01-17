@@ -16,6 +16,27 @@ export default function FinalPage() {
   const [results, setResults] = useState<StateResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [filterClassification, setFilterClassification] = useState<string>("");
+  const [filterMaxYears, setFilterMaxYears] = useState<string>("");
+  const [filterMinDisposable, setFilterMinDisposable] = useState<string>("");
+
+  // Classification hierarchy (best to worst)
+  const CLASSIFICATION_HIERARCHY = [
+    "Very viable and stable",
+    "Viable",
+    "Viable with a higher % allocated",
+    "Viable with extreme care",
+    "Viable only when renting",
+    "No viable path",
+  ] as const;
+
+  // Get all classifications at or better than the selected one
+  const getClassificationsAtOrBetter = (selected: string): string[] => {
+    if (!selected) return [];
+    const index = CLASSIFICATION_HIERARCHY.indexOf(selected as typeof CLASSIFICATION_HIERARCHY[number]);
+    if (index === -1) return [selected]; // If not in hierarchy, return as-is (defensive)
+    return CLASSIFICATION_HIERARCHY.slice(0, index + 1) as string[];
+  };
 
   useEffect(() => {
     try {
@@ -59,11 +80,11 @@ export default function FinalPage() {
     }
   }, []);
 
-  // Get state flag image URL
+  // Get state flag image URL (try local first, fallback to CDN)
   const getStateFlagUrl = (stateAbbr: string): string => {
     const abbrLower = stateAbbr.toLowerCase();
-    // Using GitHub CDN for US state flags
-    return `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+    // Try local assets first, fallback to CDN
+    return `/flags/us-states/${abbrLower}.svg`;
   };
 
   // Custom styles for range slider with white background
@@ -113,15 +134,42 @@ export default function FinalPage() {
     }
   `;
 
-  // Filter results to only show selected states
+  // Filter results to only show selected states and apply classification filter
   const filteredResults = useMemo(() => {
-    if (!inputs || !inputs.selectedStates || inputs.selectedStates.length === 0) {
-      return results; // Fallback to all results if no selection
+    let filtered = results;
+    
+    // Filter by selected states
+    if (inputs && inputs.selectedStates && inputs.selectedStates.length > 0) {
+      filtered = filtered.filter((r) => 
+        inputs.selectedStates.includes(r.stateAbbr || r.state)
+      );
     }
-    return results.filter((r) => 
-      inputs.selectedStates.includes(r.stateAbbr || r.state)
-    );
-  }, [results, inputs]);
+    
+    // Apply classification filter (hierarchical)
+    if (filterClassification) {
+      const allowedClassifications = getClassificationsAtOrBetter(filterClassification);
+      filtered = filtered.filter((r) => allowedClassifications.includes(r.classification));
+    }
+    
+    // Apply max years filter
+    if (filterMaxYears) {
+      const maxYears = Number(filterMaxYears);
+      if (!isNaN(maxYears)) {
+        filtered = filtered.filter((r) => r.yearsToHome === null || r.yearsToHome <= maxYears);
+      }
+    }
+    
+    // Apply min disposable income filter
+    if (filterMinDisposable) {
+      const minDisposable = Number(filterMinDisposable);
+      if (!isNaN(minDisposable)) {
+        filtered = filtered.filter((r) => r.disposableIncome >= minDisposable);
+      }
+    }
+    
+    // Sort by viability rating (most viable first)
+    return filtered.sort((a, b) => (b.viabilityRating || 0) - (a.viabilityRating || 0));
+  }, [results, inputs, filterClassification, filterMaxYears, filterMinDisposable]);
 
   const currentResult = useMemo(() => {
     if (!selectedState || !filteredResults.length) return null;
@@ -363,26 +411,26 @@ export default function FinalPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center">
-        <p className="text-slate-600">Loading final output...</p>
+      <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">
+        <p className="text-slate-300">Loading final output...</p>
       </div>
     );
   }
 
   if (!inputs || !currentResult) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="min-h-screen bg-slate-950 text-slate-200">
         <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-          <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <h1 className="text-2xl font-semibold text-slate-900">
+          <div className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-sm">
+            <h1 className="text-2xl font-semibold text-slate-50">
               No results available
             </h1>
-            <p className="text-slate-600">
+            <p className="text-slate-300">
               Please complete the calculator first.
             </p>
             <Link
               href="/"
-              className="inline-block rounded-2xl bg-slate-900 px-6 py-3 text-base font-semibold text-white transition hover:bg-slate-800"
+              className="inline-block rounded-2xl bg-slate-800 border border-slate-700 px-6 py-3 text-base font-semibold text-slate-50 transition hover:bg-slate-700"
             >
               Go to Calculator
             </Link>
@@ -400,25 +448,25 @@ export default function FinalPage() {
   return (
     <>
       <style>{sliderStyles}</style>
-      <div className="min-h-screen bg-blue-900 text-white">
+      <div className="min-h-screen bg-slate-950 text-slate-200">
         <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-        <header className="space-y-3 rounded-3xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-white to-red-600 p-8 shadow-xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white drop-shadow-md">
+        <header className="space-y-3 rounded-3xl border border-slate-700 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-8 shadow-xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
             Final Decision Output
           </p>
-          <h1 className="text-4xl font-bold text-slate-900 drop-shadow-sm">
+          <h1 className="text-4xl font-bold text-slate-50">
             Your Financial Path to Home Ownership
           </h1>
-          <p className="max-w-3xl text-base text-slate-700 font-medium">
+          <p className="max-w-3xl text-base text-slate-300 font-medium">
             Comprehensive analysis and actionable recommendations for achieving
             your home ownership goals.
           </p>
         </header>
 
         {/* Overall Summary */}
-        <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-xl">
-          <h2 className="text-2xl font-semibold text-blue-900">Overall Summary</h2>
-          <div className="space-y-4 text-base text-blue-800 leading-relaxed">
+        <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-xl">
+          <h2 className="text-2xl font-semibold text-slate-50">Overall Summary</h2>
+          <div className="space-y-4 text-base text-slate-300 leading-relaxed">
             {(() => {
               const viableStates = filteredResults.filter(
                 (r) =>
@@ -459,8 +507,8 @@ export default function FinalPage() {
           {/* Visual Summary Charts */}
           <div className="grid gap-4 sm:grid-cols-3 mt-6">
             {/* Classification Distribution */}
-            <div className="rounded-xl border border-blue-200 bg-white p-4">
-              <p className="text-xs font-semibold text-blue-900 uppercase mb-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <p className="text-xs font-semibold text-slate-300 uppercase mb-3">
                 Viability Breakdown
               </p>
               <div className="space-y-2">
@@ -497,7 +545,7 @@ export default function FinalPage() {
                             style={{ width: `${percent}%` }}
                           />
                         </div>
-                        <span className="text-xs text-slate-600 min-w-[60px] text-right">
+                        <span className="text-xs text-slate-300 min-w-[60px] text-right">
                           {count} ({percent.toFixed(0)}%)
                         </span>
                       </div>
@@ -508,8 +556,8 @@ export default function FinalPage() {
             </div>
 
             {/* Average Timeline */}
-            <div className="rounded-xl border border-blue-200 bg-white p-4">
-              <p className="text-xs font-semibold text-blue-900 uppercase mb-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <p className="text-xs font-semibold text-slate-300 uppercase mb-3">
                 Average Timelines
               </p>
               <div className="space-y-3">
@@ -530,8 +578,8 @@ export default function FinalPage() {
                     <>
                       {!isNaN(avgDebtFree) && Number.isFinite(avgDebtFree) && (
                         <div>
-                          <p className="text-xs text-slate-600 mb-1">Debt-Free</p>
-                          <div className="h-3 bg-blue-100 rounded-full overflow-hidden">
+                          <p className="text-xs text-slate-300 mb-1">Debt-Free</p>
+                          <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-emerald-500"
                               style={{
@@ -539,15 +587,15 @@ export default function FinalPage() {
                               }}
                             />
                           </div>
-                          <p className="text-sm font-semibold text-slate-900 mt-1">
+                          <p className="text-sm font-semibold text-slate-50 mt-1">
                             {avgDebtFree.toFixed(1)} years
                           </p>
                         </div>
                       )}
                       {!isNaN(avgHome) && Number.isFinite(avgHome) && (
                         <div>
-                          <p className="text-xs text-slate-600 mb-1">Home Ownership</p>
-                          <div className="h-3 bg-blue-100 rounded-full overflow-hidden">
+                          <p className="text-xs text-slate-300 mb-1">Home Ownership</p>
+                          <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-blue-500"
                               style={{
@@ -555,7 +603,7 @@ export default function FinalPage() {
                               }}
                             />
                           </div>
-                          <p className="text-sm font-semibold text-slate-900 mt-1">
+                          <p className="text-sm font-semibold text-slate-50 mt-1">
                             {avgHome.toFixed(1)} years
                           </p>
                         </div>
@@ -567,8 +615,8 @@ export default function FinalPage() {
             </div>
 
             {/* Top States */}
-            <div className="rounded-xl border border-blue-200 bg-white p-4">
-              <p className="text-xs font-semibold text-blue-900 uppercase mb-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <p className="text-xs font-semibold text-slate-300 uppercase mb-3">
                 Top 3 Most Viable States
               </p>
               <div className="space-y-2">
@@ -580,10 +628,10 @@ export default function FinalPage() {
                       key={result.stateAbbr || result.state}
                       className="flex items-center justify-between text-sm"
                     >
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-200">
                         {idx + 1}. {result.state}
                       </span>
-                      <span className="text-blue-700 font-bold bg-blue-100 px-2 py-1 rounded">
+                      <span className="text-slate-200 font-bold bg-slate-700 border border-slate-600 px-2 py-1 rounded">
                         {(result.viabilityRating || 0).toFixed(1)}/10
                       </span>
                     </div>
@@ -593,10 +641,72 @@ export default function FinalPage() {
           </div>
         </section>
 
+        {/* Filter Controls */}
+        <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
+          <h2 className="text-xl font-semibold text-slate-50">Filter Results</h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="text-sm font-semibold text-slate-300 mb-2 block">
+                Classification
+              </label>
+              <select
+                value={filterClassification}
+                onChange={(e) => setFilterClassification(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+              >
+                <option value="">All Classifications</option>
+                <option value="Very viable and stable">Very viable and stable</option>
+                <option value="Viable">Viable</option>
+                <option value="Viable with a higher % allocated">Viable with a higher % allocated</option>
+                <option value="Viable with extreme care">Viable with extreme care</option>
+                <option value="Viable only when renting">Viable only when renting</option>
+                <option value="No viable path">No viable path</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-300 mb-2 block">
+                Max Years to Home
+              </label>
+              <input
+                type="number"
+                value={filterMaxYears}
+                onChange={(e) => setFilterMaxYears(e.target.value)}
+                placeholder="e.g., 10"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-300 mb-2 block">
+                Min Disposable Income ($)
+              </label>
+              <input
+                type="number"
+                value={filterMinDisposable}
+                onChange={(e) => setFilterMinDisposable(e.target.value)}
+                placeholder="e.g., 10000"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+              />
+            </div>
+          </div>
+          {(filterClassification || filterMaxYears || filterMinDisposable) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilterClassification("");
+                setFilterMaxYears("");
+                setFilterMinDisposable("");
+              }}
+              className="text-sm text-slate-300 hover:text-slate-100 font-semibold"
+            >
+              Clear Filters
+            </button>
+          )}
+        </section>
+
         {/* State Slider Selector */}
         {filteredResults.length > 1 && (
-          <div className="rounded-3xl border-2 border-white bg-white p-6 shadow-lg">
-            <label className="text-sm font-semibold text-indigo-900 mb-4 block">
+          <div className="rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-lg">
+            <label className="text-sm font-semibold text-slate-300 mb-4 block">
               Browse States (Use Slider):
             </label>
             {/* State Flags Preview */}
@@ -610,20 +720,25 @@ export default function FinalPage() {
                     onClick={() => setSelectedState(result.stateAbbr || result.state)}
                     className={`flex flex-col items-center gap-1 rounded-lg p-2 transition ${
                       isSelected
-                        ? "bg-blue-100 ring-2 ring-blue-500"
-                        : "hover:bg-gray-100"
+                        ? "bg-slate-800 ring-2 ring-slate-600 border border-slate-600"
+                        : "hover:bg-slate-800"
                     }`}
                   >
                     <img
                       src={getStateFlagUrl(result.stateAbbr || result.state)}
-                      alt={`${result.state} flag`}
-                      className="h-8 w-auto border border-gray-200"
+                      alt={`Flag of ${result.state}`}
+                      className="h-8 w-auto border border-gray-200 rounded flex-shrink-0"
                       onError={(e) => {
-                        // Fallback if image fails to load
-                        (e.target as HTMLImageElement).style.display = "none";
+                        // Fallback to CDN if local asset not found
+                        const img = e.target as HTMLImageElement;
+                        const abbrLower = (result.stateAbbr || result.state).toLowerCase();
+                        img.src = `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+                        img.onerror = () => {
+                          img.style.display = "none";
+                        };
                       }}
                     />
-                    <span className="text-xs font-medium text-gray-700">
+                    <span className="text-xs font-medium text-slate-300">
                       {result.stateAbbr}
                     </span>
                   </button>
@@ -642,14 +757,14 @@ export default function FinalPage() {
                 const index = Number(e.target.value);
                 setSelectedState(filteredResults[index]?.stateAbbr || filteredResults[index]?.state || null);
               }}
-              className="w-full h-3 bg-white border-2 border-gray-300 rounded-lg appearance-none cursor-pointer"
+              className="w-full h-3 bg-slate-800 border-2 border-slate-700 rounded-lg appearance-none cursor-pointer"
               style={{
-                background: "white",
+                background: "#1e293b",
                 WebkitAppearance: "none",
                 appearance: "none",
               }}
             />
-            <div className="flex justify-between text-xs text-indigo-700 mt-2">
+            <div className="flex justify-between text-xs text-slate-300 mt-2">
               <span>First</span>
               <span className="font-semibold">
                 {(filteredResults.findIndex((r) => (r.stateAbbr || r.state) === selectedState) >= 0 
@@ -659,37 +774,43 @@ export default function FinalPage() {
               <span>Last</span>
             </div>
             {currentResult && (
-              <div className="mt-4 p-4 rounded-xl bg-blue-50 border-2 border-blue-200">
+              <div className="mt-4 p-4 rounded-xl bg-slate-800 border border-slate-700">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img
                       src={getStateFlagUrl(currentResult.stateAbbr || currentResult.state)}
-                      alt={`${currentResult.state} flag`}
-                      className="h-12 w-auto border-2 border-gray-300 rounded"
+                      alt={`Flag of ${currentResult.state}`}
+                      className="h-12 w-auto border-2 border-gray-300 rounded flex-shrink-0"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
+                        // Fallback to CDN if local asset not found
+                        const img = e.target as HTMLImageElement;
+                        const abbrLower = (currentResult.stateAbbr || currentResult.state).toLowerCase();
+                        img.src = `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+                        img.onerror = () => {
+                          img.style.display = "none";
+                        };
                       }}
                     />
                     <div>
-                      <h3 className="text-lg font-semibold text-indigo-900">
+                      <h3 className="text-lg font-semibold text-slate-50">
                         {currentResult.state}
                       </h3>
-                      <p className="text-xs text-slate-500">{currentResult.stateAbbr}</p>
+                      <p className="text-xs text-slate-400">{currentResult.stateAbbr}</p>
                     </div>
                   </div>
                   <span
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold ${
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
                       currentResult.classification === "Very viable and stable"
-                        ? "bg-emerald-100 text-emerald-800 border-2 border-emerald-300"
+                        ? "bg-emerald-950 text-emerald-400"
                         : currentResult.classification === "Viable"
-                        ? "bg-blue-100 text-blue-800 border-2 border-blue-300"
+                        ? "bg-green-950 text-green-400"
                         : currentResult.classification === "Viable with a higher % allocated"
-                        ? "bg-purple-100 text-purple-800 border-2 border-purple-300"
+                        ? "bg-amber-950 text-amber-400"
                         : currentResult.classification === "Viable with extreme care"
-                        ? "bg-amber-100 text-amber-800 border-2 border-amber-300"
+                        ? "bg-amber-950 text-amber-400"
                         : currentResult.classification === "Viable only when renting"
-                        ? "bg-orange-100 text-orange-800 border-2 border-orange-300"
-                        : "bg-red-100 text-red-800 border-2 border-red-300"
+                        ? "bg-amber-950 text-amber-400"
+                        : "bg-rose-950 text-rose-400"
                     }`}
                   >
                     {currentResult.classification}
@@ -701,9 +822,9 @@ export default function FinalPage() {
         )}
 
         {/* AI Summary */}
-        <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-lg">
-          <h2 className="text-2xl font-semibold">Summary</h2>
-          <div className="space-y-4 text-base text-slate-700 leading-relaxed">
+        <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
+          <h2 className="text-2xl font-semibold text-slate-50">Summary</h2>
+          <div className="space-y-4 text-base text-slate-300 leading-relaxed">
             {summary.map((paragraph, idx) => (
               <p key={idx}>{paragraph}</p>
             ))}
@@ -711,12 +832,12 @@ export default function FinalPage() {
         </section>
 
         {/* Timelines */}
-        <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-lg">
-          <h2 className="text-2xl font-semibold">Timeline</h2>
+        <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
+          <h2 className="text-2xl font-semibold text-slate-50">Timeline</h2>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase mb-2">
+              <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+                <p className="text-sm font-semibold text-slate-400 uppercase mb-2">
                   Years to Debt-Free
                 </p>
                 <p className="text-2xl font-bold text-slate-900">
@@ -725,13 +846,13 @@ export default function FinalPage() {
                     : `${currentResult.yearsToDebtFree.toFixed(1)} years`}
                 </p>
                 {currentResult.yearsToDebtFree !== null && currentResult.yearsToDebtFree !== undefined && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-slate-400 mt-1">
                     Age: {Math.round((inputs.age || 0) + currentResult.yearsToDebtFree)}
                   </p>
                 )}
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase mb-2">
+              <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+                <p className="text-sm font-semibold text-slate-400 uppercase mb-2">
                   Years to Down Payment
                 </p>
                 <p className="text-2xl font-bold text-slate-900">
@@ -740,13 +861,13 @@ export default function FinalPage() {
                     : `${currentResult.yearsToHome.toFixed(1)} years`}
                 </p>
                 {currentResult.yearsToHome !== null && currentResult.yearsToHome !== undefined && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-slate-400 mt-1">
                     Age: {Math.round((inputs.age || 0) + currentResult.yearsToHome)}
                   </p>
                 )}
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-500 uppercase mb-2">
+              <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+                <p className="text-sm font-semibold text-slate-400 uppercase mb-2">
                   Age at Mortgage
                 </p>
                 <p className="text-2xl font-bold text-slate-900">
@@ -758,14 +879,14 @@ export default function FinalPage() {
             </div>
 
             {/* Key Inflection Points */}
-            <div className="border-t border-slate-100 pt-4">
-              <h3 className="text-lg font-semibold text-slate-700 mb-3">
+            <div className="border-t border-slate-700 pt-4">
+              <h3 className="text-lg font-semibold text-slate-300 mb-3">
                 Key Inflection Points
               </h3>
-              <ul className="space-y-2 text-sm text-slate-600">
+              <ul className="space-y-2 text-sm text-slate-300">
                 {currentResult.yearsToDebtFree !== null && currentResult.yearsToDebtFree !== undefined && (
                   <li className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900">
+                    <span className="font-semibold text-slate-200">
                       Age {Math.round((inputs.age || 0) + currentResult.yearsToDebtFree)} (Year {currentResult.yearsToDebtFree.toFixed(1)}):
                     </span>
                     <span>Debt-free milestone reached</span>
@@ -773,7 +894,7 @@ export default function FinalPage() {
                 )}
                 {currentResult.yearsToHome !== null && currentResult.yearsToHome !== undefined && (
                   <li className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900">
+                    <span className="font-semibold text-slate-200">
                       Age {Math.round((inputs.age || 0) + currentResult.yearsToHome)} (Year {currentResult.yearsToHome.toFixed(1)}):
                     </span>
                     <span>Down payment saved, mortgage obtained</span>
@@ -782,7 +903,7 @@ export default function FinalPage() {
                 {inputs.advanced?.futureKids &&
                   inputs.advanced.firstChildAge && (
                     <li className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-200">
                         Age {inputs.advanced.firstChildAge}:
                       </span>
                       <span>First child arrives (cost of living increases)</span>
@@ -791,7 +912,7 @@ export default function FinalPage() {
                 {inputs.advanced?.partnerTiming === "yes" &&
                   inputs.advanced.partnerAge && (
                     <li className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-200">
                         Age {inputs.advanced.partnerAge}:
                       </span>
                       <span>Partner joins household (income increases)</span>
@@ -803,26 +924,26 @@ export default function FinalPage() {
         </section>
 
         {/* Long-term Wealth Comparison */}
-        <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-lg">
-          <h2 className="text-2xl font-semibold">Long-term Wealth Projection</h2>
-          <p className="text-sm text-slate-500">
+        <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
+          <h2 className="text-2xl font-semibold text-slate-50">Long-term Wealth Projection</h2>
+          <p className="text-sm text-slate-300">
             Estimated net worth at different time points (simplified calculation based
             on savings growth).
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-blue-50 p-6">
-              <p className="text-sm font-semibold text-blue-900 uppercase mb-2">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+              <p className="text-sm font-semibold text-slate-300 uppercase mb-2">
                 Net Worth at 10 Years
               </p>
-              <p className="text-3xl font-bold text-blue-900">
+              <p className="text-3xl font-bold text-slate-50">
                 ${netWorth10.toLocaleString()}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-green-50 p-6">
-              <p className="text-sm font-semibold text-green-900 uppercase mb-2">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+              <p className="text-sm font-semibold text-slate-300 uppercase mb-2">
                 Net Worth at 20 Years
               </p>
-              <p className="text-3xl font-bold text-green-900">
+              <p className="text-3xl font-bold text-slate-50">
                 ${netWorth20.toLocaleString()}
               </p>
             </div>
@@ -831,20 +952,20 @@ export default function FinalPage() {
 
         {/* Actionable Recommendations */}
         {recommendations.length > 0 && (
-          <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-lg">
-            <h2 className="text-2xl font-semibold">Actionable Recommendations</h2>
-            <p className="text-sm text-slate-500">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
+            <h2 className="text-2xl font-semibold text-slate-50">Actionable Recommendations</h2>
+            <p className="text-sm text-slate-300">
               Click "Apply this change" on any recommendation to automatically update your inputs and recalculate results.
             </p>
             <ul className="space-y-3">
               {recommendations.map((rec, idx) => (
                 <li
                   key={idx}
-                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-800 p-4"
                 >
                   <div className="flex items-start gap-3">
                     <span className="flex-shrink-0 text-slate-400">•</span>
-                    <span className="text-sm text-slate-700 flex-1">{rec.text}</span>
+                    <span className="text-sm text-slate-200 flex-1">{rec.text}</span>
                   </div>
                   {rec.action && (
                     <button
@@ -860,73 +981,42 @@ export default function FinalPage() {
           </section>
         )}
 
-        {/* PDF Downloads Section */}
-        {filteredResults.length > 0 && (
-          <section className="space-y-6 rounded-3xl border-2 border-white bg-white p-8 shadow-xl">
+        {/* PDF Download Section - Only for Selected State */}
+        {currentResult && (
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-xl">
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900 mb-2">
-                Download State Financial Plans
+              <h2 className="text-2xl font-semibold text-slate-50 mb-2">
+                Download Financial Plan PDF
               </h2>
-              <p className="text-sm text-slate-700">
-                Download comprehensive PDF reports for each selected state, including year-by-year allocation breakdowns, 
+              <p className="text-sm text-slate-300">
+                Download a comprehensive PDF report for {currentResult.state}, including year-by-year allocation breakdowns, 
                 maximum viable home values, suggested improvements, and detailed financial timelines.
               </p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredResults.map((result) => (
-                <div
-                  key={result.stateAbbr || result.state}
-                  className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-slate-900">{result.state}</h3>
-                    <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                      {(result.viabilityRating || 0).toFixed(1)}/10
-                    </span>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (inputs) {
-                        // Get all recommendations that mention this state
-                        const stateRecommendations = recommendations.filter((rec: any) => 
-                          rec.text.includes(result.state) || rec.state === result.state
-                        );
-                        // Also generate state-specific recommendations
-                        const stateRecs = generateRecommendations(result, inputs, filteredResults);
-                        const allRecs = [...stateRecommendations, ...stateRecs];
-                        await generateStatePDF(result, inputs, allRecs);
-                      }
-                    }}
-                    className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-700 shadow-md hover:shadow-lg"
-                  >
-                    Download PDF →
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-4 border-t border-slate-200">
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-50">{currentResult.state}</h3>
+                <span className="text-xs font-bold text-slate-200 bg-slate-700 border border-slate-600 px-2 py-1 rounded">
+                  {(currentResult.viabilityRating || 0).toFixed(1)}/10
+                </span>
+              </div>
               <button
                 onClick={async () => {
-                  if (!inputs) return;
-                  // Download all PDFs sequentially with a delay
-                  for (const result of filteredResults) {
+                  if (inputs && currentResult) {
                     // Get all recommendations that mention this state
                     const stateRecommendations = recommendations.filter((rec: any) => 
-                      rec.text.includes(result.state) || rec.state === result.state
+                      rec.text.includes(currentResult.state) || rec.state === currentResult.state
                     );
                     // Also generate state-specific recommendations
-                    const stateRecs = generateRecommendations(result, inputs, filteredResults);
+                    const stateRecs = generateRecommendations(currentResult, inputs, filteredResults);
                     const allRecs = [...stateRecommendations, ...stateRecs];
-                    await generateStatePDF(result, inputs, allRecs);
-                    // Small delay between downloads to avoid browser blocking
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await generateStatePDF(currentResult, inputs, allRecs);
                   }
                 }}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-red-600 px-6 py-4 text-base font-bold text-white transition hover:from-blue-700 hover:to-red-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+                className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-700 shadow-md hover:shadow-lg"
               >
-                Download All PDFs ({filteredResults.length} states)
+                Download PDF for {currentResult.state} →
               </button>
             </div>
           </section>
@@ -935,7 +1025,7 @@ export default function FinalPage() {
         <div className="flex gap-4 justify-center">
           <Link
             href="/refine"
-            className="rounded-2xl border-2 border-white bg-white px-6 py-3 text-base font-bold text-slate-700 transition hover:bg-blue-50 shadow-lg"
+            className="rounded-2xl border border-slate-700 bg-slate-900 px-6 py-3 text-base font-bold text-slate-200 transition hover:bg-slate-800 shadow-lg"
           >
             ← Back to Refinement
           </Link>

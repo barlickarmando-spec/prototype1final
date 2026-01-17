@@ -6,8 +6,19 @@ export type Strategy = "conservative" | "balanced" | "aggressive";
 export type StrategyMode = Strategy | "auto";
 export type LocationCertainty = "sure" | "deciding" | "unknown";
 
+export type AcademicStatus = 
+  | "graduated_independent"
+  | "student_independent"
+  | "student_soon_independent"
+  | "no_college_debt"
+  | "more_options";
+
 export type UserInputs = {
   age: number;
+  academicStatus?: AcademicStatus;
+  financialAssistance?: boolean;
+  financialAssistanceDuration?: number; // in years
+  personalizationPrompt?: string;
   locationCertainty: LocationCertainty;
   selectedStates: string[]; // abbreviations only
   householdType: HouseholdType;
@@ -61,6 +72,10 @@ export type StateResult = {
   strategy: Strategy;
   creditCardPlan: "upfront-only" | "reserve";
   notes: string[];
+  // New fields from simulation
+  monthlyMortgagePayment?: number;
+  requiredAllocationPercent?: number;
+  recommendedAllocationPercent?: number;
 };
 
 export type SelectOption = { value: string; label: string };
@@ -137,6 +152,27 @@ export type StateData = {
   [key: string]: unknown;
 };
 
+// ============================================================================
+// MODEL ASSUMPTIONS (explicit and easy to edit)
+// ============================================================================
+
+const MODEL_ASSUMPTIONS = {
+  inflationRate: 0.025, // 2.5% annual inflation
+  incomeGrowthRate: 0.02, // 2% annual income growth (optional but recommended)
+  homePriceGrowthRate: 0.03, // 3% annual home price growth (slightly above inflation)
+  closingCostRate: 0.02, // 2% closing costs buffer on top of down payment
+  mortgageTermYears: 30, // 30-year fixed mortgage
+  maxYears: 80, // Maximum years to simulate
+  loanProgressBufferPercent: 0.03, // 3% of disposable income buffer so loans actually decline
+  ccRefreshPeriodYears: 5, // Credit card debt refreshes every 5 years
+  defaultAnnualCreditCardDebt: 0, // Default to 0 if user doesn't provide
+  requireDebtNotToGrow: true, // Constraint: debt must not grow
+} as const;
+
+// ============================================================================
+// DATA NORMALIZATION
+// ============================================================================
+
 const normalizeStates = (): StateData[] => {
   const raw = stateDataRaw as unknown;
   
@@ -190,35 +226,9 @@ const clampKids = (kids: number): "0" | "1" | "2" => {
   return "2";
 };
 
-const STRATEGY_WEIGHTS: Record<Strategy, number> = {
-  conservative: 0.7,
-  balanced: 0.85,
-  aggressive: 1,
-};
-
-// Classification based on years to debt-free (primary metric)
-// Ordered from most restrictive (lowest maxYears) to least restrictive
-const CLASSIFICATION_BY_DEBT_FREE: Array<{
-  maxYears: number | null; // null means any number is valid
-  label: StateResult["classification"];
-}> = [
-  { maxYears: 5, label: "Very viable and stable" }, // Debt-free in 5 years or less
-  { maxYears: 10, label: "Viable" }, // Debt-free in 6-10 years
-  { maxYears: 20, label: "Viable with extreme care" }, // Debt-free in 11-20 years
-  { maxYears: null, label: "Viable only when renting" }, // Debt-free in 20+ years or null
-];
-
-// Legacy classification by savings percent (kept as fallback)
-const CLASSIFICATION_LABELS: Array<{
-  minSavingsPercent: number;
-  label: StateResult["classification"];
-}> = [
-  { minSavingsPercent: 0.45, label: "Very viable and stable" },
-  { minSavingsPercent: 0.3, label: "Viable" },
-  { minSavingsPercent: 0.18, label: "Viable with extreme care" },
-  { minSavingsPercent: 0.05, label: "Viable only when renting" },
-  { minSavingsPercent: 0, label: "No viable path" },
-];
+// ============================================================================
+// EXPORTED API FUNCTIONS (must maintain contracts)
+// ============================================================================
 
 export const getStates = (): SelectOption[] => {
   const states = getAllStates();
@@ -238,7 +248,7 @@ export const getOccupations = (): SelectOption[] => {
   const states = getAllStates();
   const occupations = new Set<string>();
 
-  // Known occupation keys from data dictionary (lines 23-44)
+  // Known occupation keys from data dictionary
   const knownOccupations = [
     "management",
     "business_and_operations",
@@ -289,6 +299,10 @@ export const getStateByName = (name: string) => {
   return states.find((state) => state.name === name || state.abbr === name);
 };
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 // Map household type + kids to flat JSON key
 const getHouseholdCostKey = (householdType: HouseholdType, kids: number): string => {
   const kidsKey = clampKids(kids);
@@ -332,112 +346,383 @@ const getSalary = (state: StateData, occupation: string, override?: number) => {
   return safeNumber(raw);
 };
 
-// Calculate annual mortgage payment using PMT formula
+// Compound growth: value * (1 + rate)^years
+const compound = (value: number, rate: number, years: number): number => {
+  if (!Number.isFinite(value) || !Number.isFinite(rate) || !Number.isFinite(years)) return value;
+  if (years <= 0) return value;
+  return value * Math.pow(1 + rate, years);
+};
+
+// Calculate monthly mortgage payment using PMT formula
 // PMT = P * [r(1+r)^n] / [(1+r)^n - 1]
-// Where P = principal (homeValue - downPayment), r = monthly rate, n = 360 months (30 years)
-const calculateAnnualMortgagePayment = (
+// Where P = principal, r = monthly rate, n = number of payments
+const calcMortgageMonthlyPayment = (
   homeValue: number,
+  downPaymentPercent: number,
   mortgageRate: number,
-  downPaymentPercent: number
+  termYears: number = MODEL_ASSUMPTIONS.mortgageTermYears
 ): number => {
-  if (homeValue <= 0 || mortgageRate <= 0) return 0;
+  if (homeValue <= 0 || mortgageRate <= 0 || termYears <= 0) return 0;
   
   const downPayment = homeValue * downPaymentPercent;
   const principal = homeValue - downPayment;
   if (principal <= 0) return 0;
   
   const monthlyRate = mortgageRate / 12;
-  const numPayments = 30 * 12; // 30 years
+  const numPayments = termYears * 12;
+  
+  if (monthlyRate === 0) {
+    // No interest case
+    return principal / numPayments;
+  }
+  
   const monthlyPayment = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / 
     (Math.pow(1 + monthlyRate, numPayments) - 1);
   
-  return monthlyPayment * 12; // Annual payment
+  return Number.isFinite(monthlyPayment) ? monthlyPayment : 0;
 };
 
-const calculateYearsToTarget = (
-  yearOneSavings: number,
-  recurringSavings: number,
-  savingsRate: number,
-  target: number,
-) => {
-  if (yearOneSavings <= 0) return null;
-  let balance = 0;
-  for (let year = 1; year <= 80; year += 1) {
-    const contribution = year === 1 ? yearOneSavings : recurringSavings;
-    balance = (balance + contribution) * (1 + savingsRate);
-    if (balance >= target) return year;
-  }
-  return null;
+// Calculate annual mortgage payment
+const calcMortgageAnnualPayment = (
+  homeValue: number,
+  downPaymentPercent: number,
+  mortgageRate: number,
+  termYears: number = MODEL_ASSUMPTIONS.mortgageTermYears
+): number => {
+  return calcMortgageMonthlyPayment(homeValue, downPaymentPercent, mortgageRate, termYears) * 12;
 };
 
-const calculateDebtFreeYears = (
-  principal: number,
-  rate: number,
-  yearOnePayment: number,
-  recurringPayment: number,
-) => {
-  if (principal <= 0) return 0;
-  let balance = principal;
-  for (let year = 1; year <= 80; year += 1) {
-    const payment = year === 1 ? yearOnePayment : recurringPayment;
-    if (payment <= balance * rate) return null;
-    balance = balance + balance * rate - payment;
-    if (balance <= 0) return year;
+// Get kids count at a specific year based on future kids schedule
+const getKidsCountAtYear = (inputs: UserInputs, yearIndex: number): number => {
+  const currentAge = inputs.age || 0;
+  const currentKids = inputs.kids || 0;
+  
+  // If futureKids is false, kids stay constant
+  if (!inputs.advanced?.futureKids) {
+    return currentKids;
   }
-  return null;
+  
+  let kids = currentKids;
+  const ageAtYear = currentAge + yearIndex;
+  
+  // Check if first child age is reached
+  if (inputs.advanced.firstChildAge !== undefined) {
+    const firstChildAge = inputs.advanced.firstChildAge;
+    // If we've crossed the first child age threshold
+    if (ageAtYear >= firstChildAge && currentAge < firstChildAge) {
+      kids = Math.max(kids, 1);
+    } else if (ageAtYear >= firstChildAge) {
+      kids = Math.max(kids, 1);
+    }
+  }
+  
+  // Check if second child age is reached
+  if (inputs.advanced.secondChildAge !== undefined) {
+    const secondChildAge = inputs.advanced.secondChildAge;
+    // If we've crossed the second child age threshold
+    if (ageAtYear >= secondChildAge && (inputs.advanced.firstChildAge === undefined || ageAtYear > (inputs.advanced.firstChildAge || 0))) {
+      kids = Math.max(kids, 2);
+    } else if (ageAtYear >= secondChildAge) {
+      kids = Math.max(kids, 2);
+    }
+  }
+  
+  return kids;
 };
+
+// ============================================================================
+// SIMULATION LOGIC
+// ============================================================================
+
+type SimulationResult = {
+  yearsToHome: number | null;
+  yearsToDebtFree: number | null;
+  monthlyMortgagePayment: number;
+  requiredAllocationPercent: number;
+  recommendedAllocationPercent: number;
+  notes: string[];
+  creditCardPlan: "upfront-only" | "reserve";
+};
+
+const simulateState = (inputs: UserInputs, state: StateData): SimulationResult => {
+  const notes: string[] = [];
+  
+  // Get initial values from state data
+  const stateName = typeof state.name === "string" ? state.name : "";
+  const stateAbbr = typeof state.abbr === "string" ? state.abbr : "";
+  
+  // Get income
+  const primaryIncome = inputs.incomeSource === "occupation" 
+    ? getSalary(state, inputs.occupation, inputs.salaryOverride)
+    : (inputs.salaryOverride || 0);
+  
+  const partnerIncome = inputs.householdType === "marriedTwoIncome"
+    ? (inputs.partnerIncomeSource === "occupation"
+      ? getSalary(state, inputs.partnerOccupation || "", inputs.partnerSalaryOverride)
+      : (inputs.partnerSalaryOverride || 0))
+    : 0;
+  
+  const baseIncome = primaryIncome + partnerIncome;
+  
+  if (baseIncome <= 0 && inputs.incomeSource === "occupation") {
+    notes.push("Missing occupation data for this state.");
+  }
+  
+  // Get home value and mortgage info
+  const homeSizeKeyMap: Record<HomeSize, string> = {
+    small: "typical_home_value_small",
+    medium: "typical_home_value_single_family_normal",
+    large: "typical_home_value_large",
+    veryLarge: "typical_home_value_very_large",
+  };
+  const homeValueKey = homeSizeKeyMap[inputs.homeSize] || "typical_home_value_single_family_normal";
+  const stateData = state as Record<string, unknown>;
+  const baseHomeValue = safeNumber(stateData[homeValueKey]);
+  const mortgageRate = safeNumber(stateData["average_mortgage_rate_fixed_30_year"]);
+  const downPaymentPercent = safeNumber(stateData["median_mortgage_down_payment_percent"]);
+  
+  // Initialize simulation state
+  let savingsBalance = 0;
+  let loanBalance = Math.max(0, inputs.studentLoanBalance || 0);
+  let ccBalance = Math.max(0, inputs.creditCardBalance || 0);
+  
+  let homePurchased = false;
+  let homePurchaseYear: number | null = null;
+  let yearsToHome: number | null = null;
+  let yearsToDebtFree: number | null = null;
+  
+  let maxRequiredAllocationPercent = 0;
+  
+  // Credit card refresh amount
+  const ccRefreshAmount = (inputs.advanced?.annualCreditCardDebt ?? MODEL_ASSUMPTIONS.defaultAnnualCreditCardDebt) * MODEL_ASSUMPTIONS.ccRefreshPeriodYears;
+  
+  // Simulate year by year
+  for (let year = 0; year < MODEL_ASSUMPTIONS.maxYears; year++) {
+    // Project income with growth
+    const income_t = compound(baseIncome, MODEL_ASSUMPTIONS.incomeGrowthRate, year);
+    
+    // Get kids count for this year
+    const kids_t = getKidsCountAtYear(inputs, year);
+    
+    // Project cost of living with inflation and kids
+    const colBase_t = getHouseholdCost(state, inputs.householdType, kids_t);
+    const col_t = compound(colBase_t, MODEL_ASSUMPTIONS.inflationRate, year);
+    
+    // Disposable income
+    const disp_t = Math.max(0, income_t - col_t);
+    
+    if (disp_t <= 0) {
+      notes.push(`Disposable income becomes negative at year ${year} due to cost of living increases.`);
+      break;
+    }
+    
+    // Budget from allocation
+    const budget_t = disp_t * (inputs.allocationPercent || 0);
+    
+    // Calculate minimum required payments
+    const interestLoan_t = loanBalance * (inputs.studentLoanRate || 0);
+    const interestCC_t = ccBalance * (inputs.creditCardApr || 0);
+    
+    const loanProgressBuffer = MODEL_ASSUMPTIONS.requireDebtNotToGrow 
+      ? (disp_t * MODEL_ASSUMPTIONS.loanProgressBufferPercent)
+      : 0;
+    
+    const minLoanPay_t = interestLoan_t + (loanBalance > 0 ? loanProgressBuffer : 0);
+    const minCcPay_t = interestCC_t + (ccBalance > 0 ? (MODEL_ASSUMPTIONS.requireDebtNotToGrow ? (disp_t * 0.01) : 0) : 0);
+    
+    // Calculate mortgage payment if home purchased
+    const homeValue_t = compound(baseHomeValue, MODEL_ASSUMPTIONS.homePriceGrowthRate, year);
+    const annualMortgagePayment = homePurchased 
+      ? calcMortgageAnnualPayment(homeValue_t, downPaymentPercent, mortgageRate)
+      : 0;
+    
+    // Calculate required allocation percent for this year
+    const requiredAlloc_t = homePurchased
+      ? (minLoanPay_t + minCcPay_t + annualMortgagePayment) / disp_t
+      : (minLoanPay_t + minCcPay_t) / disp_t;
+    
+    maxRequiredAllocationPercent = Math.max(maxRequiredAllocationPercent, requiredAlloc_t);
+    
+    // Check if budget is sufficient
+    if (budget_t < minLoanPay_t + minCcPay_t + annualMortgagePayment) {
+      if (homePurchased) {
+        notes.push(`Budget becomes insufficient to sustain mortgage at year ${year} (required: ${(requiredAlloc_t * 100).toFixed(1)}%, allocated: ${(inputs.allocationPercent * 100).toFixed(1)}%).`);
+        break;
+      } else if (budget_t < minLoanPay_t + minCcPay_t) {
+        notes.push(`Allocation too low to prevent debt growth at year ${year} (required: ${(requiredAlloc_t * 100).toFixed(1)}%, allocated: ${(inputs.allocationPercent * 100).toFixed(1)}%).`);
+      }
+    }
+    
+    // Allocate payments (optimal strategy)
+    let P_loan_t: number;
+    let P_cc_t: number;
+    let P_save_t: number;
+    
+    if (homePurchased) {
+      // After purchase: pay mortgage first, then debts, no savings
+      P_loan_t = Math.max(0, Math.min(loanBalance + interestLoan_t, budget_t - annualMortgagePayment - minCcPay_t));
+      P_cc_t = Math.max(0, Math.min(ccBalance + interestCC_t, budget_t - annualMortgagePayment - P_loan_t));
+      P_save_t = 0;
+    } else {
+      // Before purchase: pay minimums on debts, put rest in savings
+      P_loan_t = Math.min(loanBalance + interestLoan_t, minLoanPay_t);
+      P_cc_t = Math.min(ccBalance + interestCC_t, minCcPay_t);
+      P_save_t = Math.max(0, budget_t - P_loan_t - P_cc_t);
+    }
+    
+    // Update balances
+    loanBalance = Math.max(0, loanBalance + interestLoan_t - P_loan_t);
+    ccBalance = Math.max(0, ccBalance + interestCC_t - P_cc_t);
+    
+    // Credit card refresh (every N years)
+    if ((year + 1) % MODEL_ASSUMPTIONS.ccRefreshPeriodYears === 0) {
+      ccBalance += ccRefreshAmount;
+    }
+    
+    // Savings growth
+    savingsBalance = (savingsBalance + P_save_t) * (1 + (inputs.savingsRate || 0));
+    
+    // Check if home can be purchased
+    if (!homePurchased) {
+      const downPayment_t = homeValue_t * downPaymentPercent;
+      const closingBuffer_t = homeValue_t * MODEL_ASSUMPTIONS.closingCostRate;
+      const target_t = downPayment_t + closingBuffer_t;
+      
+      if (savingsBalance >= target_t) {
+        // Check if purchase is sustainable
+        const futureYearsCheck = Math.min(5, MODEL_ASSUMPTIONS.maxYears - year - 1);
+        let sustainable = true;
+        
+        for (let checkYear = year + 1; checkYear <= year + futureYearsCheck; checkYear++) {
+          const futureIncome = compound(baseIncome, MODEL_ASSUMPTIONS.incomeGrowthRate, checkYear);
+          const futureKids = getKidsCountAtYear(inputs, checkYear);
+          const futureColBase = getHouseholdCost(state, inputs.householdType, futureKids);
+          const futureCol = compound(futureColBase, MODEL_ASSUMPTIONS.inflationRate, checkYear);
+          const futureDisp = Math.max(0, futureIncome - futureCol);
+          const futureHomeValue = compound(baseHomeValue, MODEL_ASSUMPTIONS.homePriceGrowthRate, checkYear);
+          const futureMortgage = calcMortgageAnnualPayment(futureHomeValue, downPaymentPercent, mortgageRate);
+          
+          const futureLoanInterest = loanBalance * (inputs.studentLoanRate || 0);
+          const futureCcInterest = ccBalance * (inputs.creditCardApr || 0);
+          const futureMinDebt = futureLoanInterest + futureCcInterest + (futureDisp * MODEL_ASSUMPTIONS.loanProgressBufferPercent);
+          const futureRequired = (futureMinDebt + futureMortgage) / futureDisp;
+          
+          if (futureRequired > inputs.allocationPercent || futureDisp <= 0) {
+            sustainable = false;
+            break;
+          }
+        }
+        
+        if (sustainable) {
+          homePurchased = true;
+          homePurchaseYear = year;
+          yearsToHome = year;
+        }
+      }
+    }
+    
+    // Check if debt free
+    if (yearsToDebtFree === null && loanBalance <= 0 && ccBalance <= 0) {
+      yearsToDebtFree = year;
+    }
+    
+    // Early exit if both goals achieved
+    if (homePurchased && yearsToDebtFree !== null) {
+      break;
+    }
+  }
+  
+  // Calculate final mortgage payment (at purchase year home value or current year if not purchased)
+  const finalYearForMortgage = homePurchaseYear !== null ? homePurchaseYear : MODEL_ASSUMPTIONS.maxYears - 1;
+  const homeValueAtPurchase = compound(baseHomeValue, MODEL_ASSUMPTIONS.homePriceGrowthRate, finalYearForMortgage);
+  const monthlyMortgagePayment = calcMortgageMonthlyPayment(
+    homeValueAtPurchase,
+    downPaymentPercent,
+    mortgageRate
+  );
+  
+  // Recommended allocation is max of required and user's current, rounded up to next 5%
+  const recommendedAllocationPercent = Math.min(1.0, Math.ceil(maxRequiredAllocationPercent * 20) / 20);
+  
+  // Determine credit card plan (simplified: use reserve if refresh amount > 0)
+  const creditCardPlan: "upfront-only" | "reserve" = ccRefreshAmount > 0 ? "reserve" : "upfront-only";
+  
+  return {
+    yearsToHome,
+    yearsToDebtFree,
+    monthlyMortgagePayment,
+    requiredAllocationPercent: maxRequiredAllocationPercent,
+    recommendedAllocationPercent,
+    notes,
+    creditCardPlan,
+  };
+};
+
+// ============================================================================
+// CLASSIFICATION LOGIC
+// ============================================================================
 
 const getClassification = (
-  savingsPercent: number,
+  yearsToHome: number | null,
   yearsToDebtFree: number | null,
-  minRequiredPercent: number,
+  requiredAllocationPercent: number,
   userAllocationPercent: number,
-) => {
+  disposableIncomeNow: number,
+): StateResult["classification"] => {
   // Check if user allocation is insufficient but could work with higher allocation
-  const gap = userAllocationPercent - minRequiredPercent;
-  if (gap < 0 && yearsToDebtFree === null) {
-    // Could be viable with higher allocation
+  const gap = userAllocationPercent - requiredAllocationPercent;
+  if (gap < 0) {
     return "Viable with a higher % allocated";
   }
-
-  // Primary classification: based on years to debt-free
-  if (yearsToDebtFree === null) {
-    // If no path to debt-free, it's either "Viable only when renting" or "No viable path"
-    // Check based on savings percentage as a fallback
-    if (savingsPercent >= 0.05) {
-      return "Viable only when renting";
-    }
-    return "No viable path";
+  
+  // Calculate viability score (0-100)
+  let score = 0;
+  
+  // Home speed score (0-40): faster yearsToHome = higher score
+  if (yearsToHome !== null) {
+    if (yearsToHome <= 5) score += 40;
+    else if (yearsToHome <= 10) score += 30;
+    else if (yearsToHome <= 15) score += 20;
+    else if (yearsToHome <= 20) score += 10;
+    else score += 5;
   }
-
-  // Classify based on years to debt-free
-  // Check tiers in order (most restrictive first)
-  for (const tier of CLASSIFICATION_BY_DEBT_FREE) {
-    if (tier.maxYears === null) {
-      // Skip null tiers (handled separately below)
-      continue;
-    }
-    if (yearsToDebtFree <= tier.maxYears) {
-      return tier.label;
-    }
+  
+  // Debt speed score (0-30): faster yearsToDebtFree = higher score
+  if (yearsToDebtFree !== null) {
+    if (yearsToDebtFree <= 5) score += 30;
+    else if (yearsToDebtFree <= 10) score += 22;
+    else if (yearsToDebtFree <= 15) score += 15;
+    else if (yearsToDebtFree <= 20) score += 8;
+    else score += 3;
   }
-
-  // If years > 20, use "Viable only when renting" or "No viable path" based on savings
-  const rentTier = CLASSIFICATION_BY_DEBT_FREE.find((t) => t.maxYears === null);
-  if (rentTier && savingsPercent >= 0.05) {
-    return rentTier.label; // "Viable only when renting"
+  
+  // Buffer score (0-20): positive margin between allocation and required = higher score
+  if (gap > 0) {
+    if (gap >= 0.2) score += 20;
+    else if (gap >= 0.15) score += 15;
+    else if (gap >= 0.1) score += 10;
+    else if (gap >= 0.05) score += 5;
   }
-
-  // Fallback to "No viable path"
+  
+  // Disposable income score (0-10): higher disposable income = higher score
+  if (disposableIncomeNow >= 50000) score += 10;
+  else if (disposableIncomeNow >= 30000) score += 7;
+  else if (disposableIncomeNow >= 15000) score += 5;
+  else if (disposableIncomeNow >= 5000) score += 3;
+  else if (disposableIncomeNow > 0) score += 1;
+  
+  // Map score to classification
+  if (score >= 80) return "Very viable and stable";
+  if (score >= 60) return "Viable";
+  if (score >= 40) return "Viable with extreme care";
+  if (score >= 20) return "Viable only when renting";
   return "No viable path";
 };
 
-// Calculate viability rating (0-10)
 const calculateViabilityRating = (
   classification: StateResult["classification"],
   yearsToDebtFree: number | null,
   yearsToHome: number | null,
-  savingsPercent: number,
 ): number => {
   // Base rating from classification
   const classificationScores: Record<StateResult["classification"], number> = {
@@ -468,74 +753,41 @@ const calculateViabilityRating = (
     rating -= 0.5;
   }
 
-  // Adjust based on savings margin
-  if (savingsPercent >= 0.3) {
-    rating += 0.2;
-  } else if (savingsPercent < 0.1) {
-    rating -= 0.3;
-  }
-
   // Clamp to 0-10
   return Math.max(0, Math.min(10, Math.round(rating * 10) / 10));
 };
 
-const buildPlan = ({
-  allocationPercent,
-  strategy,
-  minLoanPercent,
-  creditCardUpfront,
-  creditCardReserve,
-}: {
-  disposableIncome: number; // kept for signature compatibility; unused
-  allocationPercent: number;
-  strategy: Strategy;
-  minLoanPercent: number;
-  creditCardUpfront: number;
-  creditCardReserve: number;
-}) => {
-  const housingWeight = STRATEGY_WEIGHTS[strategy];
-  const yearOneAvailable = allocationPercent - minLoanPercent - creditCardUpfront;
-  const recurringAvailable = allocationPercent - minLoanPercent - creditCardReserve;
-  if (yearOneAvailable <= 0 || recurringAvailable <= 0) return null;
-
-  const yearOneSavingsPercent = Math.max(0, yearOneAvailable * housingWeight);
-  const recurringSavingsPercent = Math.max(0, recurringAvailable * housingWeight);
-  const yearOneDebtPercent = minLoanPercent + (yearOneAvailable - yearOneSavingsPercent);
-  const recurringDebtPercent =
-    minLoanPercent + (recurringAvailable - recurringSavingsPercent);
-
-  return {
-    yearOneSavingsPercent,
-    recurringSavingsPercent,
-    yearOneDebtPercent,
-    recurringDebtPercent,
-  };
-};
+// ============================================================================
+// MAIN CALCULATION FUNCTIONS
+// ============================================================================
 
 export const calculateStateResult = (
   state: StateData,
   inputs: UserInputs,
-  strategy: Strategy,
+  strategy: Strategy, // Kept for compatibility, but not used in new model
 ): StateResult => {
   const stateName = typeof state.name === "string" ? state.name : "";
   const stateAbbr = typeof state.abbr === "string" ? state.abbr : "";
-
-  const primaryIncome = getSalary(state, inputs.occupation, inputs.salaryOverride);
-  const partnerIncome =
-    inputs.householdType === "marriedTwoIncome"
-      ? getSalary(state, inputs.partnerOccupation ?? "", inputs.partnerSalaryOverride)
-      : 0;
-
+  
+  // Run simulation
+  const simulation = simulateState(inputs, state);
+  
+  // Get initial values for display
+  const primaryIncome = inputs.incomeSource === "occupation" 
+    ? getSalary(state, inputs.occupation, inputs.salaryOverride)
+    : (inputs.salaryOverride || 0);
+  
+  const partnerIncome = inputs.householdType === "marriedTwoIncome"
+    ? (inputs.partnerIncomeSource === "occupation"
+      ? getSalary(state, inputs.partnerOccupation || "", inputs.partnerSalaryOverride)
+      : (inputs.partnerSalaryOverride || 0))
+    : 0;
+  
   const combinedIncome = primaryIncome + partnerIncome;
   const costOfLiving = getHouseholdCost(state, inputs.householdType, inputs.kids);
-  const disposableIncome = combinedIncome - costOfLiving;
-  const notes: string[] = [];
-
-  if (combinedIncome <= 0) {
-    notes.push("Missing occupation data for this state.");
-  }
-
-  // Map homeSize to flat JSON key
+  const disposableIncome = Math.max(0, combinedIncome - costOfLiving);
+  
+  // Get home value for display
   const homeSizeKeyMap: Record<HomeSize, string> = {
     small: "typical_home_value_small",
     medium: "typical_home_value_single_family_normal",
@@ -547,206 +799,52 @@ export const calculateStateResult = (
   const homeValue = safeNumber(stateData[homeValueKey]);
   const mortgageRate = safeNumber(stateData["average_mortgage_rate_fixed_30_year"]);
   const downPaymentPercent = safeNumber(stateData["median_mortgage_down_payment_percent"]);
-
-  if (disposableIncome <= 0) {
-    const classification = "No viable path";
-    return {
-      state: stateName,
-      stateAbbr,
-      classification,
-      viabilityRating: 0,
-      disposableIncome,
-      combinedIncome,
-      minDebtPercent: 0,
-      minCreditPercent: 0,
-      savingsPercent: 0,
-      yearsToHome: null,
-      yearsToDebtFree: null,
-      homeValue,
-      mortgageRate,
-      downPaymentPercent,
-      strategy,
-      creditCardPlan: "upfront-only", // FIX: required by StateResult
-      notes: [
-        ...notes,
-        "Disposable income is negative at the current household size.",
-      ],
-    };
-  }
-
-  // Guard: avoid divide-by-zero even if disposableIncome is extremely small
-  const safeDisposable = disposableIncome > 0 ? disposableIncome : 1;
-
-  const minLoanPercent =
-    (inputs.studentLoanBalance * inputs.studentLoanRate + safeDisposable * 0.05) /
-    safeDisposable;
-
-  const creditCardUpfront =
-    (inputs.creditCardBalance + inputs.creditCardBalance * inputs.creditCardApr) /
-    safeDisposable;
-
-  const creditCardReserve = creditCardUpfront / 5;
-
-  const upfrontPlan = buildPlan({
-    disposableIncome,
-    allocationPercent: inputs.allocationPercent,
-    strategy,
-    minLoanPercent,
-    creditCardUpfront,
-    creditCardReserve: 0,
-  });
-
-  const reservePlan = buildPlan({
-    disposableIncome,
-    allocationPercent: inputs.allocationPercent,
-    strategy,
-    minLoanPercent,
-    creditCardUpfront,
-    creditCardReserve,
-  });
-
-  const downPayment = homeValue * downPaymentPercent;
-  const target = downPayment;
-
-  const planOptions = [
-    { label: "upfront-only" as const, plan: upfrontPlan },
-    { label: "reserve" as const, plan: reservePlan },
-  ];
-
-  const scoredPlans = planOptions.map(({ label, plan }) => {
-    if (!plan) return null;
-    const yearsToHome = calculateYearsToTarget(
-      disposableIncome * plan.yearOneSavingsPercent,
-      disposableIncome * plan.recurringSavingsPercent,
-      inputs.savingsRate,
-      target,
-    );
-    const yearsToDebtFree = calculateDebtFreeYears(
-      inputs.studentLoanBalance,
-      inputs.studentLoanRate,
-      disposableIncome * plan.yearOneDebtPercent,
-      disposableIncome * plan.recurringDebtPercent,
-    );
-    return {
-      label,
-      plan,
-      yearsToHome,
-      yearsToDebtFree,
-    };
-  });
-
-  const viablePlans = scoredPlans.filter(
-    (plan): plan is NonNullable<typeof plan> => plan !== null,
-  );
-
-  if (viablePlans.length === 0) {
-    const classification = "No viable path";
-    return {
-      state: stateName,
-      stateAbbr,
-      classification,
-      viabilityRating: calculateViabilityRating(classification, null, null, 0),
-      disposableIncome,
-      combinedIncome,
-      minDebtPercent: minLoanPercent,
-      minCreditPercent: creditCardUpfront,
-      savingsPercent: 0,
-      yearsToHome: null,
-      yearsToDebtFree: null,
-      homeValue,
-      mortgageRate,
-      downPaymentPercent,
-      strategy,
-      creditCardPlan: "upfront-only",
-      notes: [
-        ...notes,
-        "Allocation is insufficient to cover minimum debt obligations.",
-      ],
-    };
-  }
-
-  const bestPlan = viablePlans.reduce((winner, current) => {
-    if (winner.yearsToHome === null) return current;
-    if (current.yearsToHome === null) return winner;
-    if (current.yearsToHome !== winner.yearsToHome) {
-      return current.yearsToHome < winner.yearsToHome ? current : winner;
-    }
-    if (current.yearsToDebtFree === null) return winner;
-    if (winner.yearsToDebtFree === null) return current;
-    return current.yearsToDebtFree < winner.yearsToDebtFree ? current : winner;
-  });
-
-  const savingsPercent = bestPlan.plan.recurringSavingsPercent;
-  const yearsToHome = bestPlan.yearsToHome;
-  const yearsToDebtFree = bestPlan.yearsToDebtFree;
-  const minRequiredPercent = minLoanPercent + creditCardUpfront;
-  const userAllocationPercent = inputs.allocationPercent;
-
-  if (yearsToHome === null) {
-    notes.push("Savings allocation cannot reach a down payment.");
-  }
-
-  if (yearsToDebtFree === null) {
-    notes.push("Student loan payment is too low to reduce the balance.");
-  }
-
-  // Check if mortgage payment is affordable after home purchase
-  // Account for future cost of living with kids if applicable
-  let futureCostOfLiving = costOfLiving;
-  let futureKids = inputs.kids;
-  if (inputs.advanced?.futureKids) {
-    if (inputs.advanced.firstChildAge) {
-      // Assume at least one kid by home purchase if first child age is set
-      futureKids = Math.max(futureKids, 1);
-    }
-    if (inputs.advanced.secondChildAge) {
-      futureKids = Math.max(futureKids, 2);
-    }
-    futureCostOfLiving = getHouseholdCost(state, inputs.householdType, futureKids);
-  }
   
-  const annualMortgagePayment = calculateAnnualMortgagePayment(homeValue, mortgageRate, downPaymentPercent);
+  // Calculate legacy fields for backward compatibility
+  const minDebtPercent = simulation.requiredAllocationPercent * 0.5; // Rough estimate
+  const minCreditPercent = simulation.requiredAllocationPercent * 0.1; // Rough estimate
+  const savingsPercent = simulation.requiredAllocationPercent > 0 
+    ? Math.max(0, inputs.allocationPercent - simulation.requiredAllocationPercent)
+    : inputs.allocationPercent;
   
-  // Calculate disposable income after mortgage (if home purchased)
-  // This checks affordability: income - cost of living (with kids) - mortgage - debt payments
-  const futureDisposableAfterMortgage = combinedIncome - futureCostOfLiving - annualMortgagePayment;
-  const requiredAfterMortgage = (disposableIncome * minLoanPercent) + 
-                                (inputs.creditCardBalance > 0 ? (disposableIncome * creditCardUpfront / 5) : 0);
-  
-  if (yearsToHome !== null && futureDisposableAfterMortgage < requiredAfterMortgage) {
-    notes.push(`Warning: After home purchase, annual mortgage payment ($${Math.round(annualMortgagePayment).toLocaleString()}) may strain finances when combined with debt obligations.`);
-  }
-
+  // Get classification
   const classification = getClassification(
-    savingsPercent,
-    yearsToDebtFree,
-    minRequiredPercent,
-    userAllocationPercent,
+    simulation.yearsToHome,
+    simulation.yearsToDebtFree,
+    simulation.requiredAllocationPercent,
+    inputs.allocationPercent,
+    disposableIncome
   );
-
+  
+  // Calculate viability rating
+  const viabilityRating = calculateViabilityRating(
+    classification,
+    simulation.yearsToDebtFree,
+    simulation.yearsToHome
+  );
+  
   return {
     state: stateName,
     stateAbbr,
     classification,
-    viabilityRating: calculateViabilityRating(
-      classification,
-      yearsToDebtFree,
-      yearsToHome,
-      savingsPercent,
-    ),
+    viabilityRating,
     disposableIncome,
     combinedIncome,
-    minDebtPercent: minLoanPercent,
-    minCreditPercent: creditCardUpfront,
+    minDebtPercent,
+    minCreditPercent,
     savingsPercent,
-    yearsToHome,
-    yearsToDebtFree,
+    yearsToHome: simulation.yearsToHome,
+    yearsToDebtFree: simulation.yearsToDebtFree,
     homeValue,
     mortgageRate,
     downPaymentPercent,
-    strategy,
-    creditCardPlan: bestPlan.label,
-    notes,
+    strategy, // Keep for backward compatibility
+    creditCardPlan: simulation.creditCardPlan,
+    notes: simulation.notes,
+    // New fields
+    monthlyMortgagePayment: simulation.monthlyMortgagePayment,
+    requiredAllocationPercent: simulation.requiredAllocationPercent,
+    recommendedAllocationPercent: simulation.recommendedAllocationPercent,
   };
 };
 
@@ -762,28 +860,14 @@ export const calculateResults = (inputs: UserInputs) => {
         });
 
   return states.map((state) => {
+    // Strategy mode is kept for compatibility but not used in new simulation model
     if (inputs.strategyMode !== "auto") {
       return calculateStateResult(state, inputs, inputs.strategyMode);
     }
-    const strategies: Strategy[] = ["conservative", "balanced", "aggressive"];
-    const results = strategies.map((strategy) =>
-      calculateStateResult(state, inputs, strategy),
-    );
-    const viable = results.filter((result) => result.yearsToHome !== null);
-    if (viable.length === 0) return results[1];
-    const best = viable.reduce((winner, current) => {
-      if (winner.yearsToHome === null) return current;
-      if (current.yearsToHome === null) return winner;
-      if (current.yearsToHome !== winner.yearsToHome) {
-        return current.yearsToHome < winner.yearsToHome ? current : winner;
-      }
-      if (current.yearsToDebtFree === null) return winner;
-      if (winner.yearsToDebtFree === null) return current;
-      return current.yearsToDebtFree < winner.yearsToDebtFree ? current : winner;
-    });
-    return best;
+    // For "auto", use balanced strategy
+    return calculateStateResult(state, inputs, "balanced");
   });
 };
 
-// Export alias for calculateResults (as specified in requirements)
+// Export alias for calculateResults
 export const calculateAffordability = calculateResults;

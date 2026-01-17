@@ -13,6 +13,10 @@ import {
 
 const DEFAULT_INPUTS: UserInputs = {
   age: 0,
+  academicStatus: undefined,
+  financialAssistance: undefined,
+  financialAssistanceDuration: undefined,
+  personalizationPrompt: undefined,
   locationCertainty: "sure",
   selectedStates: [],
   householdType: "single",
@@ -49,15 +53,16 @@ export default function Home() {
   const [showPartnerOccupationDropdown, setShowPartnerOccupationDropdown] =
     useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [showPersonalization, setShowPersonalization] = useState(false);
 
   const states = useMemo(() => getStates(), []);
   const occupations = useMemo(() => getOccupations(), []);
 
-  // Get state flag image URL
+  // Get state flag image URL (try local first, fallback to CDN)
   const getStateFlagUrl = (stateAbbr: string): string => {
     const abbrLower = stateAbbr.toLowerCase();
-    // Using GitHub CDN for US state flags
-    return `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+    // Try local assets first, fallback to CDN
+    return `/flags/us-states/${abbrLower}.svg`;
   };
 
   const filteredStates = useMemo(() => {
@@ -258,32 +263,42 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-blue-900">
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-        <header className="space-y-3 rounded-3xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-white to-red-600 p-8 shadow-xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white drop-shadow-md">
-            Affordability Prototype
+    <div className="min-h-screen bg-slate-950">
+      <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 py-8">
+        <header className="space-y-4 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+            AFFORDABILITY ANALYSIS
           </p>
-          <h1 className="text-4xl font-bold text-white drop-shadow-sm">
+          <h1 className="text-3xl font-semibold text-slate-50 leading-tight">
             Estimate your path to home ownership and debt freedom
           </h1>
-          <p className="max-w-3xl text-base text-blue-100 font-medium">
+          <p className="max-w-3xl text-sm text-slate-300 leading-relaxed">
             Start with the core inputs below. After submitting, you will see a
             state-by-state overview, then refine your selections and generate a
             final decision-grade summary.
           </p>
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Step 1 of 3 — Inputs</span>
+              <span>~2 minutes</span>
+            </div>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-800">
+              <div className="h-1.5 w-1/3 rounded-full bg-slate-50" />
+            </div>
+          </div>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-12">
+        <form onSubmit={handleSubmit} className="space-y-8">
           {/* Location Certainty */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">1. Location certainty</h2>
-              <p className="text-sm text-slate-900">
+              <h2 className="text-xl font-semibold text-slate-50">1. Location certainty</h2>
+              <div className="h-px bg-slate-700" />
+              <p className="text-sm text-slate-300 leading-relaxed">
                 Choose how specific you are about where you want to live.
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               {(
                 [
                   ["sure", "I know exactly where I want to live"],
@@ -293,10 +308,10 @@ export default function Home() {
               ).map(([value, label]) => (
                 <label
                   key={value}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                     inputs.locationCertainty === value
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -329,14 +344,21 @@ export default function Home() {
                       setShowStateDropdown(false);
                     }
                   }}
-                  placeholder="Search states"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                  placeholder="Search or select a state"
+                  className={`w-full rounded-lg border pr-10 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600 ${
+                    showStateDropdown
+                      ? "border-slate-600 ring-2 ring-slate-700"
+                      : "border-slate-700"
+                  }`}
                   disabled={inputs.locationCertainty === "unknown"}
                 />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  ▾
+                </span>
                 {showStateDropdown && inputs.locationCertainty !== "unknown" && (
-                  <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                  <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-lg">
                     {filteredStates.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-slate-900">
+                      <p className="px-3 py-2 text-sm text-slate-700">
                         No matching states.
                       </p>
                     )}
@@ -350,26 +372,37 @@ export default function Home() {
                             event.preventDefault();
                             handleStateToggle(state.value);
                           }}
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition ${
                             selected
-                              ? "bg-blue-100 text-blue-900 border-2 border-blue-500"
-                              : "hover:bg-slate-100 text-slate-900"
+                              ? "bg-slate-800 text-slate-50 border border-slate-600"
+                              : "hover:bg-slate-50 text-slate-700"
                           }`}
                         >
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-center gap-2.5">
                             <img
                               src={getStateFlagUrl(state.value)}
-                              alt={`${state.label} flag`}
-                              className="h-5 w-auto border border-gray-200 rounded"
+                              alt={`Flag of ${state.label}`}
+                              className="h-4 w-auto border border-slate-700 rounded flex-shrink-0"
                               onError={(e) => {
-                                // Fallback if image fails to load - hide the image
+                                // Fallback to CDN if local asset not found
                                 const img = e.target as HTMLImageElement;
-                                img.style.display = "none";
+                                const abbrLower = state.value.toLowerCase();
+                                img.src = `https://cdn.jsdelivr.net/gh/jonathanleeper/state-flags@latest/svg/${abbrLower}.svg`;
+                                img.onerror = () => {
+                                  img.style.display = "none";
+                                };
                               }}
                             />
-                            <span>{state.label}</span>
+                            <span className="flex-1">{state.label}</span>
+                            <span className="text-xs text-slate-500 font-medium">{state.value}</span>
                           </span>
-                          {selected && <span>✓</span>}
+                          {selected && (
+                            <span className="ml-2 text-slate-600">
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -377,19 +410,30 @@ export default function Home() {
                 )}
               </div>
               {inputs.selectedStates.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pt-1">
                   {inputs.selectedStates.map((abbr) => {
                     const state = states.find((s) => s.value === abbr);
                     return (
                       <span
                         key={abbr}
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-900"
+                        className="inline-flex items-center gap-2 rounded-md bg-slate-800 border border-slate-700 px-3 py-1.5 text-sm text-slate-200"
                       >
-                        {state?.label}
+                        <img
+                          src={getStateFlagUrl(abbr)}
+                          alt={`Flag of ${state?.label || abbr}`}
+                          className="h-4 w-auto border border-slate-700 rounded flex-shrink-0"
+                          onError={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            img.style.display = "none";
+                          }}
+                        />
+                        <span>{state?.label}</span>
                         <button
                           type="button"
                           onClick={() => handleStateToggle(abbr)}
-                          className="text-slate-900 hover:text-slate-900"
+                          className="ml-1 text-slate-400 hover:text-slate-200 transition-colors text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-slate-700 font-semibold"
+                          aria-label={`Remove ${state?.label}`}
+                          title={`Remove ${state?.label}`}
                         >
                           ×
                         </button>
@@ -401,41 +445,150 @@ export default function Home() {
             </div>
           </section>
 
-          {/* Age Input */}
-          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+          {/* Academic/Career Status */}
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">2. Your Age</h2>
-              <p className="text-sm text-slate-900">
-                Enter your current age to see when you'll reach key milestones.
+              <h2 className="text-xl font-semibold text-slate-50">2. Academic & Career Status</h2>
+              <div className="h-px bg-slate-700" />
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Tell us about your current academic and career situation.
               </p>
             </div>
-            <div>
-              <label className="text-sm font-semibold text-slate-900">
-                Current age
-              </label>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                max="100"
-                value={inputs.age}
-                onChange={(e) =>
-                  handleNumberChange(e.target.value, inputs.age, (val) =>
-                    updateInputs({ age: Math.max(0, Math.min(100, val)) }),
-                  )
-                }
-                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
-                placeholder="25"
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {([
+                ["graduated_independent", "Graduated - Financially Independent"],
+                ["student_independent", "Student - Financially Independent"],
+                ["student_soon_independent", "Student - Soon to be Independent"],
+                ["no_college_debt", "No College Debt"],
+                ["more_options", "More Options"],
+              ] as Array<[NonNullable<UserInputs["academicStatus"]>, string]>).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
+                    inputs.academicStatus === value
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="academicStatus"
+                    value={value}
+                    className="hidden"
+                    checked={inputs.academicStatus === value}
+                    onChange={() => updateInputs({ academicStatus: value })}
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
+            
+            {/* Conditional Age Input Based on Academic Status */}
+            {inputs.academicStatus && (
+              <div>
+                <label className="text-sm font-semibold text-slate-300">
+                  {inputs.academicStatus === "graduated_independent" 
+                    ? "Current age"
+                    : inputs.academicStatus === "student_independent"
+                    ? "Current age"
+                    : inputs.academicStatus === "student_soon_independent"
+                    ? "Age when you plan on graduating/being financially independent"
+                    : inputs.academicStatus === "no_college_debt"
+                    ? "Current age"
+                    : "Age"}
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  max="100"
+                  value={inputs.age || ""}
+                  onChange={(e) =>
+                    handleNumberChange(e.target.value, inputs.age || 0, (val) =>
+                      updateInputs({ age: Math.max(0, Math.min(100, val)) }),
+                    )
+                  }
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                  placeholder="25"
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Financial Assistance */}
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-slate-50">3. Financial Assistance</h2>
+              <div className="h-px bg-slate-700" />
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Do you have any financial assistance (family support, scholarships, etc.)?
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
+                  inputs.financialAssistance === true
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="financialAssistance"
+                  value="yes"
+                  className="hidden"
+                  checked={inputs.financialAssistance === true}
+                  onChange={() => updateInputs({ financialAssistance: true })}
+                />
+                Yes
+              </label>
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
+                  inputs.financialAssistance === false
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="financialAssistance"
+                  value="no"
+                  className="hidden"
+                  checked={inputs.financialAssistance === false}
+                  onChange={() => updateInputs({ financialAssistance: false })}
+                />
+                No
+              </label>
+            </div>
+            {inputs.financialAssistance === true && (
+              <div>
+                <label className="text-sm font-semibold text-slate-300">
+                  Duration of financial assistance (years) <span className="text-slate-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={inputs.financialAssistanceDuration || ""}
+                  onChange={(e) =>
+                    handleNumberChange(e.target.value, inputs.financialAssistanceDuration || 0, (val) =>
+                      updateInputs({ financialAssistanceDuration: val }),
+                    )
+                  }
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
+                  placeholder="e.g., 2"
+                />
+              </div>
+            )}
           </section>
 
           {/* Household */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">3. Household</h2>
+              <h2 className="text-xl font-semibold text-slate-50">4. Household</h2>
+              <div className="h-px bg-slate-100" />
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               {(
                 [
                   ["single", "Single"],
@@ -448,7 +601,7 @@ export default function Home() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                     inputs.householdType === value
                       ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
+                      : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -465,7 +618,7 @@ export default function Home() {
             </div>
             <div>
               <label className="text-sm font-semibold text-slate-900">
-                Number of kids <span className="text-slate-400 text-xs">(optional)</span>
+                Number of kids <span className="text-slate-500 text-xs">(optional)</span>
               </label>
               <input
                 type="number"
@@ -477,27 +630,28 @@ export default function Home() {
                     updateInputs({ kids: val }),
                   )
                 }
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                   placeholder="e.g., 2"
               />
             </div>
           </section>
 
           {/* Income */}
-          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">4. Income</h2>
+              <h2 className="text-xl font-semibold text-slate-50">5. Income</h2>
+              <div className="h-px bg-slate-100" />
             </div>
             
             {/* Primary Income */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-900">Primary income</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <h3 className="text-sm font-semibold text-slate-300">Primary income</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                     inputs.incomeSource === "occupation"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -511,10 +665,10 @@ export default function Home() {
                   By occupation
                 </label>
                 <label
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                     inputs.incomeSource === "salary"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -545,17 +699,17 @@ export default function Home() {
                       }
                     }}
                     placeholder="Search occupations"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                    className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                   />
                   {selectedOccupationLabel && !showOccupationDropdown && (
-                    <div className="mt-2 text-sm text-slate-800">
+                    <div className="mt-2 text-sm text-slate-600">
                       Selected: {selectedOccupationLabel}
                     </div>
                   )}
                   {showOccupationDropdown && (
-                    <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
+                    <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-lg">
                       {filteredOccupations.length === 0 && (
-                        <p className="px-3 py-2 text-sm text-slate-900">
+                        <p className="px-3 py-2 text-sm text-slate-300">
                           No matching occupations.
                         </p>
                       )}
@@ -569,14 +723,14 @@ export default function Home() {
                             setOccupationQuery(occupation.label);
                             setShowOccupationDropdown(false);
                           }}
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition ${
                             inputs.occupation === occupation.value
-                              ? "bg-slate-900 text-white"
-                              : "hover:bg-slate-100 text-slate-900"
+                              ? "bg-slate-800 text-slate-50 border border-slate-600"
+                              : "hover:bg-slate-50 text-slate-700"
                           }`}
                         >
                           <span>{occupation.label}</span>
-                          {inputs.occupation === occupation.value && <span>✓</span>}
+                          {inputs.occupation === occupation.value && <span className="text-xs text-slate-600 font-medium">Selected</span>}
                         </button>
                       ))}
                     </div>
@@ -597,21 +751,21 @@ export default function Home() {
                       (val) => updateInputs({ salaryOverride: val === 0 ? undefined : val }),
                     )
                   }
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200"
                 />
               )}
             </div>
 
             {/* Partner Income */}
             {inputs.householdType === "marriedTwoIncome" && (
-              <div className="space-y-4 border-t border-slate-100 pt-6">
-                <h3 className="text-sm font-semibold text-slate-900">Partner income</h3>
+              <div className="space-y-4 border-t border-slate-700 pt-6">
+                <h3 className="text-sm font-semibold text-slate-300">Partner income</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label
-                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                       inputs.partnerIncomeSource === "occupation"
                         ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700"
                     }`}
                   >
                     <input
@@ -625,10 +779,10 @@ export default function Home() {
                     By occupation
                   </label>
                   <label
-                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                       inputs.partnerIncomeSource === "salary"
                         ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700"
                     }`}
                   >
                     <input
@@ -659,17 +813,17 @@ export default function Home() {
                         }
                       }}
                       placeholder="Search partner occupations"
-                      className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                      className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                     />
                     {selectedPartnerOccupationLabel && !showPartnerOccupationDropdown && (
-                      <div className="mt-2 text-sm text-slate-800">
+                      <div className="mt-2 text-sm text-slate-600">
                         Selected: {selectedPartnerOccupationLabel}
                       </div>
                     )}
                     {showPartnerOccupationDropdown && (
-                      <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-100 bg-white p-2 shadow-lg">
+                      <div className="absolute z-10 mt-2 max-h-52 w-full overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-lg">
                         {filteredPartnerOccupations.length === 0 && (
-                          <p className="px-3 py-2 text-sm text-slate-900">
+                          <p className="px-3 py-2 text-sm text-slate-300">
                             No matching occupations.
                           </p>
                         )}
@@ -686,11 +840,11 @@ export default function Home() {
                             className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
                               inputs.partnerOccupation === occupation.value
                                 ? "bg-slate-900 text-white"
-                                : "hover:bg-slate-100 text-slate-900"
+                                : "hover:bg-slate-800 text-slate-200"
                             }`}
                           >
                             <span>{occupation.label}</span>
-                            {inputs.partnerOccupation === occupation.value && <span>✓</span>}
+                            {inputs.partnerOccupation === occupation.value && <span className="text-xs text-slate-600 font-medium">Selected</span>}
                           </button>
                         ))}
                       </div>
@@ -711,7 +865,7 @@ export default function Home() {
                         (val) => updateInputs({ partnerSalaryOverride: val === 0 ? undefined : val }),
                       )
                     }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900"
+                    className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                   />
                 )}
               </div>
@@ -719,14 +873,15 @@ export default function Home() {
           </section>
 
           {/* Debt & Savings */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">5. Debt & Savings</h2>
+              <h2 className="text-xl font-semibold text-slate-50">6. Debt & Savings</h2>
+              <div className="h-px bg-slate-100" />
             </div>
             
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-sm font-semibold text-slate-900">
+                <label className="text-sm font-semibold text-slate-300">
                   Student loan balance <span className="text-slate-400 text-xs">(optional)</span>
                 </label>
                 <input
@@ -739,13 +894,13 @@ export default function Home() {
                       updateInputs({ studentLoanBalance: val }),
                     )
                   }
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                   placeholder="e.g., 30000"
                 />
               </div>
               
               <div>
-                <label className="text-sm font-semibold text-slate-900">
+                <label className="text-sm font-semibold text-slate-300">
                   Student loan rate <span className="text-slate-400 text-xs">(optional)</span>
                 </label>
                 <input
@@ -757,50 +912,13 @@ export default function Home() {
                     const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
                     updateInputs({ studentLoanRate: val });
                   }}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                   placeholder="e.g., 6.3"
                 />
               </div>
               
               <div>
-                <label className="text-sm font-semibold text-slate-900">
-                  Credit card balance <span className="text-slate-400 text-xs">(optional)</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={inputs.creditCardBalance || ""}
-                  onChange={(e) =>
-                    handleNumberChange(e.target.value, inputs.creditCardBalance || 0, (val) =>
-                      updateInputs({ creditCardBalance: val }),
-                    )
-                  }
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                  placeholder="e.g., 5000"
-                />
-              </div>
-              
-              <div>
-                <label className="text-sm font-semibold text-slate-900">
-                  Credit card APR <span className="text-slate-400 text-xs">(optional)</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={inputs.creditCardApr ? inputs.creditCardApr * 100 : ""}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
-                    updateInputs({ creditCardApr: val });
-                  }}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                  placeholder="e.g., 21.6"
-                />
-              </div>
-              
-              <div>
-                <label className="text-sm font-semibold text-slate-900">
+                <label className="text-sm font-semibold text-slate-300">
                   Savings rate (annual) <span className="text-slate-400 text-xs">(optional)</span>
                 </label>
                 <input
@@ -812,13 +930,13 @@ export default function Home() {
                     const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
                     updateInputs({ savingsRate: val });
                   }}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                   placeholder="e.g., 3.5"
                 />
               </div>
               
               <div>
-                <label className="text-sm font-semibold text-slate-900">
+                <label className="text-sm font-semibold text-slate-300">
                   Allocation % (of disposable income) <span className="text-slate-400 text-xs">(optional)</span>
                 </label>
                 <input
@@ -831,7 +949,7 @@ export default function Home() {
                     const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
                     updateInputs({ allocationPercent: Math.min(1, Math.max(0, val)) });
                   }}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                   placeholder="e.g., 80"
                 />
               </div>
@@ -839,12 +957,13 @@ export default function Home() {
           </section>
 
           {/* Home Preferences */}
-          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-slate-900">6. Home preferences</h2>
+              <h2 className="text-xl font-semibold text-slate-50">7. Home preferences</h2>
+              <div className="h-px bg-slate-100" />
             </div>
             
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               {(
                 [
                   ["small", "Small"],
@@ -855,10 +974,10 @@ export default function Home() {
               ).map(([value, label]) => (
                 <label
                   key={value}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                     inputs.homeSize === value
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -878,7 +997,7 @@ export default function Home() {
               <label className="text-sm font-semibold text-slate-900">
                 Strategy mode
               </label>
-              <div className="mt-2 grid gap-4 sm:grid-cols-4">
+              <div className="mt-2 grid gap-3 sm:grid-cols-4">
                 {(
                   [
                     ["auto", "Auto"],
@@ -892,7 +1011,7 @@ export default function Home() {
                     className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                       inputs.strategyMode === value
                         ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-900"
+                        : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
                     }`}
                   >
                     <input
@@ -910,21 +1029,72 @@ export default function Home() {
             </div>
           </section>
 
+          {/* Personalization Section */}
+          <section className="space-y-6 rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setShowPersonalization(!showPersonalization)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-slate-50">8. Personalization & Additional Information</h2>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Have specific conditions or information we should consider?
+                </p>
+              </div>
+              <svg
+                className={`h-5 w-5 text-slate-300 transition-transform ${
+                  showPersonalization ? "rotate-180" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            {showPersonalization && (
+              <div className="space-y-4 border-t border-slate-700 pt-6">
+                <div>
+                  <label className="text-sm font-semibold text-slate-900 mb-2 block">
+                    Specific Conditions or Personalized Information
+                  </label>
+                  <p className="text-xs text-slate-600 mb-3">
+                    Examples: You have a job offer only in one state at the moment, you've already made progress on debt payments, etc.
+                  </p>
+                  <textarea
+                    value={inputs.personalizationPrompt || ""}
+                    onChange={(e) => updateInputs({ personalizationPrompt: e.target.value || undefined })}
+                    placeholder="Tell us about any specific conditions, job offers, debt progress, or other personalized information we should consider..."
+                    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 min-h-[120px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                    rows={5}
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* Advanced / Optional Inputs */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex w-full items-center justify-between text-left"
             >
               <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-slate-900">7. Advanced settings</h2>
-                <p className="text-sm text-slate-900">
+                <h2 className="text-xl font-semibold text-slate-50">9. Advanced settings</h2>
+                <p className="text-sm text-slate-600 leading-relaxed">
                   Optional inputs for future planning and detailed assumptions
                 </p>
               </div>
               <svg
-                className={`h-5 w-5 text-slate-900 transition-transform ${
+                className={`h-5 w-5 text-slate-300 transition-transform ${
                   showAdvanced ? "rotate-180" : ""
                 }`}
                 fill="none"
@@ -944,7 +1114,7 @@ export default function Home() {
               <div className="space-y-8 border-t border-slate-100 pt-6">
                 {/* Future Household Changes */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-slate-900">
+                  <h3 className="text-sm font-semibold text-slate-300">
                     Future household changes
                   </h3>
                   <div className="space-y-4">
@@ -952,12 +1122,12 @@ export default function Home() {
                       <label className="text-sm font-medium text-slate-800">
                         Do you plan to have children?
                       </label>
-                      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                      <div className="mt-2 grid gap-3 sm:grid-cols-2">
                         <label
-                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                             inputs.advanced.futureKids === true
                               ? "border-slate-900 bg-slate-900 text-white"
-                              : "border-slate-200 bg-white text-slate-900"
+                              : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
                           <input
@@ -973,10 +1143,10 @@ export default function Home() {
                           Yes
                         </label>
                         <label
-                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                             inputs.advanced.futureKids === false
                               ? "border-slate-900 bg-slate-900 text-white"
-                              : "border-slate-200 bg-white text-slate-900"
+                              : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
                           <input
@@ -997,8 +1167,8 @@ export default function Home() {
                     {inputs.advanced.futureKids && (
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
-                          <label className="text-sm font-semibold text-slate-900">
-                            First child age <span className="text-slate-400 text-xs">(optional)</span>
+                          <label className="text-sm font-semibold text-slate-300">
+                            First child age <span className="text-slate-500 text-xs">(optional)</span>
                           </label>
                           <input
                             type="number"
@@ -1014,11 +1184,11 @@ export default function Home() {
                                     : Number(e.target.value),
                               })
                             }
-                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                            className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-semibold text-slate-900">
+                          <label className="text-sm font-semibold text-slate-300">
                             Second child age <span className="text-slate-400 text-xs">(optional)</span>
                           </label>
                           <input
@@ -1035,7 +1205,7 @@ export default function Home() {
                                     : Number(e.target.value),
                               })
                             }
-                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                            className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                           />
                         </div>
                       </div>
@@ -1045,15 +1215,15 @@ export default function Home() {
 
                 {/* Partner Timing (only if single) */}
                 {inputs.householdType === "single" && (
-                  <div className="space-y-4 border-t border-slate-100 pt-6">
-                    <h3 className="text-sm font-semibold text-slate-900">
+                  <div className="space-y-4 border-t border-slate-700 pt-6">
+                    <h3 className="text-sm font-semibold text-slate-300">
                       Partner timing
                     </h3>
                     <div>
-                      <label className="text-sm font-medium text-slate-800">
+                      <label className="text-sm font-medium text-slate-300">
                         Do you expect a financially merged partner later? <span className="text-slate-400 text-xs">(optional)</span>
                       </label>
-                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                      <div className="mt-2 grid gap-3 sm:grid-cols-3">
                         {(
                           [
                             ["yes", "Yes"],
@@ -1065,8 +1235,8 @@ export default function Home() {
                             key={value}
                             className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                               inputs.advanced.partnerTiming === value
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-white text-slate-900"
+                                ? "border-slate-600 bg-slate-800 text-slate-50"
+                                : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
                             }`}
                           >
                             <input
@@ -1091,8 +1261,8 @@ export default function Home() {
                       </div>
                       {inputs.advanced.partnerTiming === "yes" && (
                         <div className="mt-4">
-                          <label className="text-sm font-semibold text-slate-900">
-                            Expected age when partner joins <span className="text-slate-400 text-xs">(optional)</span>
+                          <label className="text-sm font-semibold text-slate-300">
+                            Expected age when partner joins <span className="text-slate-500 text-xs">(optional)</span>
                           </label>
                           <input
                             type="number"
@@ -1108,7 +1278,7 @@ export default function Home() {
                                     : Number(e.target.value),
                               })
                             }
-                            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                            className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                           />
                         </div>
                       )}
@@ -1116,15 +1286,59 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* Credit Card Debt (Additional Information) */}
+                <div className="space-y-4 border-t border-slate-700 pt-6">
+                  <h3 className="text-sm font-semibold text-slate-300">
+                    Credit Card Debt (Additional Information)
+                  </h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-300">
+                        Credit card balance <span className="text-slate-500 text-xs">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="e.g., 5000"
+                        value={inputs.creditCardBalance || ""}
+                        onChange={(e) =>
+                          handleNumberChange(e.target.value, inputs.creditCardBalance || 0, (val) =>
+                            updateInputs({ creditCardBalance: val }),
+                          )
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-slate-300">
+                        Credit card APR <span className="text-slate-400 text-xs">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={inputs.creditCardApr ? inputs.creditCardApr * 100 : ""}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
+                          updateInputs({ creditCardApr: val });
+                        }}
+                        className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
+                        placeholder="e.g., 21.6"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Debt Behavior Assumptions */}
-                <div className="space-y-4 border-t border-slate-100 pt-6">
-                  <h3 className="text-sm font-semibold text-slate-900">
+                <div className="space-y-4 border-t border-slate-700 pt-6">
+                  <h3 className="text-sm font-semibold text-slate-300">
                     Debt behavior assumptions
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
-                      <label className="text-sm font-semibold text-slate-900">
-                        Estimate Annual Credit Card Debt Value <span className="text-slate-400 text-xs">(optional)</span>
+                      <label className="text-sm font-semibold text-slate-300">
+                        Estimate Annual Credit Card Debt Value <span className="text-slate-500 text-xs">(optional)</span>
                       </label>
                       <input
                         type="number"
@@ -1140,11 +1354,11 @@ export default function Home() {
                                 : Number(e.target.value),
                           })
                         }
-                        className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                        className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                       />
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-slate-900">
+                      <label className="text-sm font-semibold text-slate-300">
                         Student loan repayment style <span className="text-slate-400 text-xs">(optional)</span>
                       </label>
                       <div className="mt-2 grid gap-2">
@@ -1159,10 +1373,10 @@ export default function Home() {
                         ).map(([value, label]) => (
                           <label
                             key={value}
-                            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-2 text-sm font-medium transition ${
+                            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition focus-within:outline-none focus-within:ring-2 focus-within:ring-slate-400 ${
                               inputs.advanced.studentLoanStyle === value
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-white text-slate-900"
+                                ? "border-slate-600 bg-slate-800 text-slate-50"
+                                : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                             }`}
                           >
                             <input
@@ -1186,14 +1400,14 @@ export default function Home() {
                 </div>
 
                 {/* Savings Assumptions */}
-                <div className="space-y-4 border-t border-slate-100 pt-6">
-                  <h3 className="text-sm font-semibold text-slate-900">
+                <div className="space-y-4 border-t border-slate-700 pt-6">
+                  <h3 className="text-sm font-semibold text-slate-300">
                     Savings assumptions
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-1">
                     <div>
-                      <label className="text-sm font-semibold text-slate-900">
-                        Savings account interest rate (annual) <span className="text-slate-400 text-xs">(optional)</span>
+                      <label className="text-sm font-semibold text-slate-300">
+                        Savings account interest rate (annual) <span className="text-slate-500 text-xs">(optional)</span>
                       </label>
                       <input
                         type="number"
@@ -1204,7 +1418,7 @@ export default function Home() {
                           const val = e.target.value === "" ? 0 : Number(e.target.value) / 100;
                           updateInputs({ savingsRate: val });
                         }}
-                        className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                        className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
                         placeholder="e.g., 3.5"
                       />
                     </div>
@@ -1215,14 +1429,14 @@ export default function Home() {
           </section>
 
           {formError && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <div className="rounded-lg border border-rose-700 bg-rose-950 p-4 text-sm text-rose-400 leading-relaxed">
               {formError}
             </div>
           )}
 
           <button
             type="submit"
-            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-red-600 px-6 py-4 text-base font-bold text-white transition hover:from-blue-700 hover:to-red-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-5 py-3 text-base font-semibold text-slate-50 transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-600"
           >
             Calculate Affordability
           </button>

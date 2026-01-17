@@ -97,26 +97,26 @@ export default function RefinePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-blue-900 text-white flex items-center justify-center">
-        <p className="text-blue-100">Loading refinement options...</p>
+      <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">
+        <p className="text-slate-300">Loading refinement options...</p>
       </div>
     );
   }
 
   if (!inputs) {
     return (
-      <div className="min-h-screen bg-blue-900 text-white">
+      <div className="min-h-screen bg-slate-950 text-slate-200">
         <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-          <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <h1 className="text-2xl font-semibold text-slate-900">
+          <div className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-sm">
+            <h1 className="text-2xl font-semibold text-slate-50">
               No inputs available
             </h1>
-            <p className="text-slate-600">
+            <p className="text-slate-300">
               Please complete the calculator first.
             </p>
             <Link
               href="/"
-              className="inline-block rounded-2xl bg-slate-900 px-6 py-3 text-base font-semibold text-white transition hover:bg-slate-800"
+              className="inline-block rounded-2xl bg-slate-800 border border-slate-700 px-6 py-3 text-base font-semibold text-slate-50 transition hover:bg-slate-700"
             >
               Go to Calculator
             </Link>
@@ -127,16 +127,16 @@ export default function RefinePage() {
   }
 
   return (
-    <div className="min-h-screen bg-blue-900 text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-200">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-12">
-        <header className="space-y-3 rounded-3xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-white to-red-600 p-8 shadow-xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white drop-shadow-md">
+        <header className="space-y-3 rounded-3xl border border-slate-700 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-8 shadow-xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
             Refine Your Selection
           </p>
-          <h1 className="text-4xl font-bold text-slate-900 drop-shadow-sm">
+          <h1 className="text-4xl font-bold text-slate-50">
             Adjust Your Financial Plan
           </h1>
-          <p className="max-w-3xl text-base text-slate-700 font-medium">
+          <p className="max-w-3xl text-base text-slate-300 font-medium">
             Narrow your state selection, adjust allocation percentages, modify house
             size preferences, and experiment with different strategies. Click
             "Recalculate" to see updated results.
@@ -145,10 +145,10 @@ export default function RefinePage() {
 
         <div className="space-y-8">
           {/* Narrow States - Grouped by Viability */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-blue-900">1. Narrow States</h2>
-              <p className="text-sm text-blue-700">
+              <h2 className="text-xl font-semibold text-slate-50">1. Narrow States</h2>
+              <p className="text-sm text-slate-300">
                 Select or deselect states to analyze, organized by viability classification.
               </p>
             </div>
@@ -172,12 +172,12 @@ export default function RefinePage() {
               });
 
               const classificationColors: Record<string, { bg: string; text: string; border: string }> = {
-                "Very viable and stable": { bg: "bg-emerald-50", text: "text-emerald-900", border: "border-emerald-300" },
-                "Viable": { bg: "bg-blue-50", text: "text-blue-900", border: "border-blue-300" },
-                "Viable with a higher % allocated": { bg: "bg-purple-50", text: "text-purple-900", border: "border-purple-300" },
-                "Viable with extreme care": { bg: "bg-amber-50", text: "text-amber-900", border: "border-amber-300" },
-                "Viable only when renting": { bg: "bg-orange-50", text: "text-orange-900", border: "border-orange-300" },
-                "No viable path": { bg: "bg-red-50", text: "text-red-900", border: "border-red-300" },
+                "Very viable and stable": { bg: "bg-slate-800", text: "text-emerald-400", border: "border-slate-700" },
+                "Viable": { bg: "bg-slate-800", text: "text-green-400", border: "border-slate-700" },
+                "Viable with a higher % allocated": { bg: "bg-slate-800", text: "text-amber-400", border: "border-slate-700" },
+                "Viable with extreme care": { bg: "bg-slate-800", text: "text-amber-400", border: "border-slate-700" },
+                "Viable only when renting": { bg: "bg-slate-800", text: "text-amber-400", border: "border-slate-700" },
+                "No viable path": { bg: "bg-slate-800", text: "text-rose-400", border: "border-slate-700" },
               };
 
               return (
@@ -198,23 +198,23 @@ export default function RefinePage() {
                                 key={state.value}
                                 className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                                   selected
-                                    ? `border-blue-900 bg-blue-900 text-white`
-                                    : `border-blue-200 bg-white text-slate-700 hover:bg-blue-100`
+                                    ? `border-slate-600 bg-slate-800 text-slate-50`
+                                    : `border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800`
                                 }`}
                               >
                                 <input
                                   type="checkbox"
                                   checked={selected}
                                   onChange={() => toggleState(state.value)}
-                                  className="rounded border-blue-300"
+                                  className="rounded border-slate-600 bg-slate-800"
                                 />
                                 <span className="flex-1">{state.label}</span>
                                 {result && (
                                   <div className="ml-auto flex items-center gap-2">
-                                    <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                                    <span className="text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 px-2 py-1 rounded">
                                       {result.viabilityRating.toFixed(1)}/10
                                     </span>
-                                    <span className="text-xs text-slate-500">
+                                    <span className="text-xs text-slate-400">
                                       {result.yearsToHome !== null && `${result.yearsToHome.toFixed(1)}y`}
                                       {result.yearsToDebtFree !== null && ` / ${result.yearsToDebtFree.toFixed(1)}y debt-free`}
                                     </span>
@@ -233,12 +233,12 @@ export default function RefinePage() {
           </section>
 
           {/* Maximum % Allocation */}
-          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">
+              <h2 className="text-xl font-semibold text-slate-50">
                 2. Maximum % Willing to Allocate
               </h2>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-300">
                 Adjust the percentage of disposable income you're willing to allocate
                 toward house savings and debt payments.
               </p>
@@ -259,31 +259,31 @@ export default function RefinePage() {
                   const gap = getGap(worstResult);
 
                   return (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
                       <div className="grid gap-3 sm:grid-cols-3">
                         <div>
-                          <p className="text-xs font-semibold text-slate-500 uppercase">
+                          <p className="text-xs font-semibold text-slate-400 uppercase">
                             Minimum Required
                           </p>
-                          <p className="text-lg font-semibold text-slate-900">
+                          <p className="text-lg font-semibold text-slate-50">
                             {minRequired.toFixed(1)}%
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs font-semibold text-slate-500 uppercase">
+                          <p className="text-xs font-semibold text-slate-400 uppercase">
                             Your Allocation
                           </p>
-                          <p className="text-lg font-semibold text-slate-900">
+                          <p className="text-lg font-semibold text-slate-50">
                             {userAllocation.toFixed(1)}%
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs font-semibold text-slate-500 uppercase">
+                          <p className="text-xs font-semibold text-slate-400 uppercase">
                             Gap
                           </p>
                           <p
                             className={`text-lg font-semibold ${
-                              gap >= 0 ? "text-green-600" : "text-red-600"
+                              gap >= 0 ? "text-green-400" : "text-rose-400"
                             }`}
                           >
                             {gap >= 0 ? "+" : ""}
@@ -296,7 +296,7 @@ export default function RefinePage() {
                 })()}
 
                 <div className="space-y-3">
-                  <label className="text-sm font-semibold text-slate-700">
+                  <label className="text-sm font-semibold text-slate-300">
                     Allocation % (of disposable income)
                   </label>
                   
@@ -313,7 +313,7 @@ export default function RefinePage() {
                         });
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200 placeholder:text-slate-500"
                     placeholder="80"
                   />
                   
@@ -331,7 +331,7 @@ export default function RefinePage() {
                     }
                     className="w-full"
                   />
-                  <div className="flex justify-between text-xs text-slate-500">
+                  <div className="flex justify-between text-xs text-slate-400">
                     <span>0%</span>
                     <span>100%</span>
                   </div>
@@ -341,10 +341,10 @@ export default function RefinePage() {
           </section>
 
           {/* House Size Preference */}
-          <section className="space-y-6 rounded-3xl border-2 border-blue-300 bg-gradient-to-br from-white to-blue-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">3. House Size Preference</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-xl font-semibold text-slate-50">3. House Size Preference</h2>
+              <p className="text-sm text-slate-300">
                 Select your preferred home size. Sizes are shown for all states, but
                 viability may vary.
               </p>
@@ -362,8 +362,8 @@ export default function RefinePage() {
                   key={value}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                     inputs.homeSize === value
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -381,10 +381,10 @@ export default function RefinePage() {
           </section>
 
           {/* Strategy Adjustment */}
-          <section className="space-y-6 rounded-3xl border-2 border-red-300 bg-gradient-to-br from-white to-red-50 p-8 shadow-lg">
+          <section className="space-y-6 rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-lg">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">4. Strategy Adjustment</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-xl font-semibold text-slate-50">4. Strategy Adjustment</h2>
+              <p className="text-sm text-slate-300">
                 Switch between Conservative, Balanced, and Aggressive strategies to
                 see how timelines change.
               </p>
@@ -402,8 +402,8 @@ export default function RefinePage() {
                   key={value}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition ${
                     inputs.strategyMode === value
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                      ? "border-slate-600 bg-slate-800 text-slate-50"
+                      : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   }`}
                 >
                   <input
@@ -421,7 +421,7 @@ export default function RefinePage() {
           </section>
 
           {!hasRecalculated && (
-            <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+            <div className="rounded-2xl border border-amber-700 bg-amber-950 p-4 text-sm text-amber-400">
               You've made changes. Click "Recalculate" to see updated results.
             </div>
           )}
@@ -430,20 +430,20 @@ export default function RefinePage() {
         <div className="flex gap-4 justify-center">
           <Link
             href="/results"
-            className="rounded-2xl border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-2xl border border-slate-700 bg-slate-900 px-6 py-3 text-base font-semibold text-slate-200 transition hover:bg-slate-800"
           >
             ← Back to Results
           </Link>
           <button
             onClick={handleRecalculate}
-            className="rounded-2xl bg-gradient-to-r from-blue-600 to-red-600 px-6 py-3 text-base font-bold text-white transition hover:from-blue-700 hover:to-red-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+            className="rounded-2xl bg-slate-800 border border-slate-700 px-6 py-3 text-base font-bold text-slate-50 transition hover:bg-slate-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
           >
             Recalculate
           </button>
           {hasRecalculated && (
             <button
               onClick={() => router.push("/final")}
-              className="rounded-2xl bg-gradient-to-r from-blue-600 to-red-600 px-6 py-3 text-base font-bold text-white transition hover:from-blue-700 hover:to-red-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+              className="rounded-2xl bg-slate-800 border border-slate-700 px-6 py-3 text-base font-bold text-slate-50 transition hover:bg-slate-700 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
             >
               View Final Output →
             </button>

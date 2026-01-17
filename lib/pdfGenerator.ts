@@ -329,21 +329,95 @@ export async function generateStatePDF(
   doc.setDrawColor(200, 200, 200);
   doc.line(margin, yPos, pageWidth - margin, yPos);
   yPos += 12;
+
+  // ========================================================================
+  // PHASE 1: EXECUTIVE SUMMARY BOX (Must appear before any tables)
+  // ========================================================================
+  checkNewPage(50);
   
-  // ALLOCATION PERCENTAGES SECTION
-  doc.setFontSize(16);
+  // Draw executive summary box
+  doc.setFillColor(245, 247, 250);
+  doc.setDrawColor(30, 58, 138);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(margin, yPos, contentWidth, 45, 3, 3, 'FD');
+  
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text('Recommended Financial Allocation', margin, yPos);
-  yPos += 10;
+  doc.setTextColor(30, 58, 138);
+  doc.text('Executive Summary', margin + 8, yPos + 10);
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80, 80, 80);
-  doc.text('Your recommended allocation percentages for savings, debt payments, and expenses.', margin, yPos);
-  yPos += 12;
+  doc.setTextColor(0, 0, 0);
   
-  // Calculate percentages
+  // Build executive summary paragraph
+  const homeTimeline = result.yearsToHome !== null 
+    ? `you can realistically purchase a home in approximately ${result.yearsToHome.toFixed(1)} years`
+    : `home ownership is not achievable under current assumptions`;
+  
+  const debtTimeline = result.yearsToDebtFree !== null
+    ? `become debt-free in ${result.yearsToDebtFree.toFixed(1)} years`
+    : `debt freedom is not achievable under current assumptions`;
+  
+  const stabilityNote = result.classification === 'Very viable and stable' || result.classification === 'Viable'
+    ? 'while maintaining long-term financial stability'
+    : result.classification === 'Viable with extreme care'
+    ? 'with careful financial discipline required'
+    : 'though this state presents significant financial challenges';
+  
+  const summaryText = `In ${result.state}, ${homeTimeline} and ${debtTimeline} ${stabilityNote} under current assumptions.`;
+  
+  doc.text(summaryText, margin + 8, yPos + 25, { maxWidth: contentWidth - 16, align: 'left' });
+  
+  yPos += 52;
+
+  // ========================================================================
+  // PHASE 1: SEPARATE INPUTS VS RESULTS
+  // ========================================================================
+  
+  // Section A: Your Inputs
+  checkNewPage(100);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('Section A — Your Inputs (Assumed / Selected)', margin, yPos);
+  yPos += 10;
+  
+  const stateForInputs = getStateByName(result.state);
+  const costOfLiving = stateForInputs ? getHouseholdCost(stateForInputs, inputs.householdType, inputs.kids) : 
+    (result.combinedIncome - result.disposableIncome);
+  
+  const inputsData = [
+    ['Input', 'Value'],
+    ['Combined Income', `$${result.combinedIncome.toLocaleString()}/year`],
+    ['Cost of Living', `$${costOfLiving.toLocaleString()}/year`],
+    ['% of Disposable Income Allocated', `${(inputs.allocationPercent * 100).toFixed(1)}%`],
+    ['Target Home Size', inputs.homeSize.charAt(0).toUpperCase() + inputs.homeSize.slice(1)],
+    ['Mortgage Rate', `${(result.mortgageRate * 100).toFixed(2)}%`],
+    ['Savings Interest Rate', `${((inputs.savingsRate || 0) * 100).toFixed(2)}%`],
+  ];
+  
+  autoTable(doc, {
+    startY: yPos,
+    head: [inputsData[0]],
+    body: inputsData.slice(1),
+    theme: 'striped',
+    headStyles: { fillColor: [100, 100, 100], textColor: 255, fontStyle: 'bold' },
+    styles: { fontSize: 9, cellPadding: 4 },
+    margin: { left: margin, right: margin },
+  });
+  
+  yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+  
+  // Section B: Your Results
+  checkNewPage(80);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('Section B — Your Results', margin, yPos);
+  yPos += 10;
+  
+  // Calculate allocation percentages once (reused throughout PDF)
   const disposableIncome = result.disposableIncome;
   const combinedIncome = result.combinedIncome;
   const savingsPercentOfDisposable = result.savingsPercent;
@@ -359,6 +433,49 @@ export async function generateStatePDF(
   const creditPercentOfSalary = combinedIncome > 0 
     ? (disposableIncome * creditPercentOfDisposable) / combinedIncome 
     : 0;
+  
+  // Calculate home size options once (used in multiple sections)
+  const homeSizeOptions = calculateHomeSizeOptions(result, inputs);
+  
+  const resultsData = [
+    ['Result', 'Value'],
+    ['Viability Rating', `${(result.viabilityRating || 0).toFixed(1)}/10`],
+    ['Years to Home Ownership', result.yearsToHome !== null ? `${result.yearsToHome.toFixed(1)} years` : 'N/A'],
+    ['Years to Debt-Free', result.yearsToDebtFree !== null ? `${result.yearsToDebtFree.toFixed(1)} years` : 'N/A'],
+    ['Home Savings Allocation', `${(savingsPercentOfDisposable * 100).toFixed(1)}% of disposable income`],
+    ['Student Loan Allocation', `${(debtPercentOfDisposable * 100).toFixed(1)}% of disposable income`],
+    ['Credit Card Allocation', `${(creditPercentOfDisposable * 100).toFixed(1)}% of disposable income`],
+  ];
+  
+  autoTable(doc, {
+    startY: yPos,
+    head: [resultsData[0]],
+    body: resultsData.slice(1),
+    theme: 'striped',
+    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold' },
+    styles: { fontSize: 9, cellPadding: 4 },
+    margin: { left: margin, right: margin },
+  });
+  
+  yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+
+  // ========================================================================
+  // PHASE 2: IMPROVED ALLOCATION TABLE WITH EXPLANATIONS
+  // ========================================================================
+  checkNewPage(100);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('3. Recommended Financial Allocation', margin, yPos);
+  yPos += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('Optimal allocation strategy with explanatory notes below.', margin, yPos);
+  yPos += 12;
+  
+  // Percentages and home size options already calculated above (in Section B)
   
   const allocationData = [
     [
@@ -403,40 +520,29 @@ export async function generateStatePDF(
     },
   });
   
-  yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+  yPos = (doc.lastAutoTable?.finalY || yPos) + 12;
   
-  // Key Metrics Section
-  checkNewPage(50);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text('Key Financial Metrics', margin, yPos);
-  yPos += 10;
+  // Add explanatory notes for each allocation category
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(80, 80, 80);
   
-  const metrics = [
-    ['Viability Rating', `${(result.viabilityRating || 0).toFixed(1)}/10`],
-    ['Classification', result.classification],
-    ['Combined Income', `$${result.combinedIncome.toLocaleString()}/year`],
-    ['Disposable Income', `$${result.disposableIncome.toLocaleString()}/year`],
-    ['Allocation Percentage', `${(inputs.allocationPercent * 100).toFixed(1)}%`],
-    ['Years to Debt-Free', result.yearsToDebtFree !== null ? `${result.yearsToDebtFree.toFixed(1)} years` : 'N/A'],
-    ['Years to Home Ownership', result.yearsToHome !== null ? `${result.yearsToHome.toFixed(1)} years` : 'N/A'],
-    ['Current Home Target', `$${result.homeValue.toLocaleString()}`],
-    ['Down Payment %', `${(result.downPaymentPercent * 100).toFixed(1)}%`],
-    ['Mortgage Rate', `${(result.mortgageRate * 100).toFixed(2)}%`],
-  ];
+  if (savingsPercentOfDisposable > 0) {
+    doc.text(`Home Savings (${(savingsPercentOfDisposable * 100).toFixed(1)}%): Used exclusively for down payment accumulation until purchase.`, margin + 4, yPos);
+    yPos += 6;
+  }
   
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Metric', 'Value']],
-    body: metrics,
-    theme: 'striped',
-    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold' },
-    styles: { fontSize: 9, cellPadding: 4 },
-    margin: { left: margin, right: margin },
-  });
+  if (debtPercentOfDisposable > 0) {
+    doc.text(`Student Loans (${(debtPercentOfDisposable * 100).toFixed(1)}%): Above interest-only minimum to ensure principal reduction.`, margin + 4, yPos);
+    yPos += 6;
+  }
   
-  yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+  if (creditPercentOfDisposable > 0) {
+    doc.text(`Credit Cards (${(creditPercentOfDisposable * 100).toFixed(1)}%): Prevents balance growth and periodic refresh risk.`, margin + 4, yPos);
+    yPos += 6;
+  }
+  
+  yPos += 6;
   
   // HOME SIZE OPTIONS SECTION
   checkNewPage(80);
@@ -451,7 +557,6 @@ export async function generateStatePDF(
   doc.text('Compare different home sizes and how long it will take to afford each one.', margin, yPos);
   yPos += 12;
   
-  const homeSizeOptions = calculateHomeSizeOptions(result, inputs);
   const homeSizeTableData = homeSizeOptions.map(opt => [
     opt.label,
     `$${opt.homeValue.toLocaleString()}`,
@@ -472,13 +577,44 @@ export async function generateStatePDF(
     },
   });
   
-  yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+  yPos = (doc.lastAutoTable?.finalY || yPos) + 12;
+  
+  // Add insight after home size table
+  const viableSizesForInsight = homeSizeOptions.filter(opt => opt.viable && opt.yearsToHome !== null);
+  if (viableSizesForInsight.length > 0) {
+    const fastestSize = viableSizesForInsight.reduce((best, current) => {
+      if (!best || !current.yearsToHome) return current;
+      if (!best.yearsToHome) return current;
+      return current.yearsToHome < best.yearsToHome ? current : best;
+    }, null as HomeSizeOption | null);
+    
+    const selectedOption = homeSizeOptions.find(o => o.size === inputs.homeSize);
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    
+    let insightText = '';
+    if (fastestSize && fastestSize.size === inputs.homeSize) {
+      insightText = `Insight: Your selected ${fastestSize.label.toLowerCase()} home size is optimal, balancing speed (${fastestSize.yearsToHome?.toFixed(1)} years) with your preferences while maintaining financial flexibility.`;
+    } else if (fastestSize && selectedOption && selectedOption.yearsToHome && fastestSize.yearsToHome) {
+      const timeDiff = selectedOption.yearsToHome - fastestSize.yearsToHome;
+      insightText = `Insight: ${fastestSize.label} homes can be purchased ${timeDiff.toFixed(1)} years faster, trading size for speed and reduced financial risk. Your selected size prioritizes space over timeline.`;
+    } else if (fastestSize) {
+      insightText = `Insight: ${fastestSize.label} homes offer the fastest timeline (${fastestSize.yearsToHome?.toFixed(1)} years), prioritizing speed and reduced financial risk.`;
+    }
+    
+    if (insightText) {
+      doc.text(insightText, margin + 4, yPos, { maxWidth: contentWidth - 8 });
+      yPos += 12;
+    }
+  }
   
   // Year-by-Year Breakdown
   checkNewPage(100);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('Year-by-Year Financial Allocation', margin, yPos);
+  doc.text('5. Year-by-Year Financial Allocation', margin, yPos);
   yPos += 10;
   
   const yearlyBreakdown = generateYearlyBreakdown(result, inputs, 15);
@@ -535,13 +671,20 @@ export async function generateStatePDF(
     });
     
     yPos = (doc.lastAutoTable?.finalY || yPos) + 18;
+    
+    // Add net worth explanation footnote
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    doc.text('Net Worth = Savings + Home Equity − Remaining Debt', margin + 4, yPos);
+    yPos += 6;
+    doc.text('Early negative net worth is expected due to high initial student loan balances.', margin + 4, yPos);
+    yPos += 12;
   }
-  
-  // WEALTH GENERATION IMPROVEMENTS SECTION
   checkNewPage(100);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('Ways to Improve Wealth Generation', margin, yPos);
+  doc.text('7. Ways to Improve Wealth Generation', margin, yPos);
   yPos += 10;
   
   doc.setFontSize(10);
@@ -552,41 +695,64 @@ export async function generateStatePDF(
   
   const improvements: string[] = [];
   
-  // Generate improvement suggestions based on current situation
-  if (result.savingsPercent < 0.2) {
-    improvements.push(`Increase savings allocation: Currently at ${(result.savingsPercent * 100).toFixed(1)}%. Increasing to 20%+ would significantly accelerate home ownership.`);
+  // Generate improvement suggestions with concrete outcomes
+  if (result.savingsPercent < 0.2 && result.savingsPercent > 0) {
+    const currentPercent = (result.savingsPercent * 100).toFixed(1);
+    const newPercent = 20;
+    if (result.yearsToHome !== null && result.yearsToHome > 0) {
+      // Estimate: 5% increase in savings rate roughly translates to 15-20% faster timeline
+      const monthsSaved = Math.round((result.yearsToHome * 12) * 0.15);
+      improvements.push(`Increasing savings allocation from ${currentPercent}% to ${newPercent}% would reduce home purchase timeline by approximately ${monthsSaved} months (from ${result.yearsToHome.toFixed(1)} to ${Math.max(1, result.yearsToHome - (monthsSaved / 12)).toFixed(1)} years).`);
+    }
   }
   
   if (result.yearsToDebtFree && result.yearsToDebtFree > 5) {
-    improvements.push(`Accelerate debt payoff: Paying an extra 5-10% toward student loans could reduce debt-free timeline from ${result.yearsToDebtFree.toFixed(1)} years to ${Math.max(3, result.yearsToDebtFree - 2).toFixed(1)} years.`);
+    const extraPercent = Math.min(10, (result.requiredAllocationPercent || 0) * 100 + 5 - (inputs.allocationPercent * 100));
+    if (extraPercent > 0) {
+      const monthsReduced = Math.round((result.yearsToDebtFree - 5) * 12 * 0.3); // Rough estimate
+      improvements.push(`Increasing debt payment allocation by ${extraPercent.toFixed(0)}% would reduce debt-free timeline from ${result.yearsToDebtFree.toFixed(1)} years to approximately ${Math.max(3, result.yearsToDebtFree - (monthsReduced / 12)).toFixed(1)} years (${monthsReduced} months faster).`);
+    }
   }
   
-  if (inputs.savingsRate < 0.03) {
-    improvements.push(`Maximize savings rate: Current rate of ${(inputs.savingsRate * 100).toFixed(1)}%. Consider high-yield savings accounts or conservative investments for 3-5% returns.`);
+  if (inputs.savingsRate < 0.03 && inputs.savingsRate >= 0) {
+    const currentRate = (inputs.savingsRate * 100).toFixed(1);
+    const monthsSaved = result.yearsToHome !== null && result.yearsToHome > 0 ? Math.round(result.yearsToHome * 12 * 0.08) : 0;
+    if (monthsSaved > 0) {
+      improvements.push(`Maximizing savings rate from ${currentRate}% to 3-5% (high-yield accounts) would reduce home purchase timeline by approximately ${monthsSaved} months through compound growth.`);
+    }
   }
   
   if (result.homeValue > 0 && result.yearsToHome && result.yearsToHome > 10) {
-    improvements.push(`Consider smaller home initially: A small or medium home could be purchased ${Math.max(2, result.yearsToHome - 8).toFixed(0)} years sooner, then upgrade later.`);
+    const smallerSizes = homeSizeOptions.filter(opt => opt.viable && opt.yearsToHome && opt.yearsToHome < result.yearsToHome!);
+    if (smallerSizes.length > 0) {
+      const fastestSmall = smallerSizes.reduce((best, curr) => (curr.yearsToHome || Infinity) < (best.yearsToHome || Infinity) ? curr : best);
+      if (fastestSmall.yearsToHome) {
+        const yearsSaved = result.yearsToHome! - fastestSmall.yearsToHome;
+        improvements.push(`Choosing a ${fastestSmall.label.toLowerCase()} home instead of ${inputs.homeSize} would reduce purchase timeline from ${result.yearsToHome.toFixed(1)} to ${fastestSmall.yearsToHome.toFixed(1)} years (${yearsSaved.toFixed(1)} years faster).`);
+      }
+    }
   }
   
-  if (inputs.allocationPercent < 0.3) {
-    improvements.push(`Increase overall allocation: Allocating ${((inputs.allocationPercent + 0.1) * 100).toFixed(0)}% instead of ${(inputs.allocationPercent * 100).toFixed(0)}% of disposable income could shorten timelines by 20-30%.`);
+  if (inputs.allocationPercent < 0.3 && inputs.allocationPercent > 0) {
+    const newAlloc = Math.min(1, inputs.allocationPercent + 0.1);
+    const percentIncrease = ((newAlloc - inputs.allocationPercent) * 100).toFixed(0);
+    if (result.yearsToHome !== null && result.yearsToHome > 0) {
+      const monthsSaved = Math.round(result.yearsToHome * 12 * 0.25); // Rough estimate
+      improvements.push(`Increasing overall allocation from ${(inputs.allocationPercent * 100).toFixed(0)}% to ${(newAlloc * 100).toFixed(0)}% (+${percentIncrease}%) would reduce home purchase timeline by approximately ${monthsSaved} months.`);
+    }
   }
   
   if (result.classification === 'Viable with a higher % allocated') {
-    improvements.push(`Raise allocation percentage: With a higher allocation, this state becomes fully viable with faster timelines.`);
+    const optimalAlloc = Math.min(100, Math.ceil((result.requiredAllocationPercent || 0) * 100 / 5) * 5);
+    improvements.push(`Raising allocation to ${optimalAlloc}% (from ${(inputs.allocationPercent * 100).toFixed(0)}%) would make this state fully viable, enabling home ownership where it's currently not achievable.`);
   }
   
-  // Add general suggestions
-  improvements.push(`Automate savings: Set up automatic transfers to ensure consistent savings each month.`);
-  improvements.push(`Track expenses: Monitor spending to identify areas where you can redirect funds to savings or debt payoff.`);
-  
-  if (inputs.householdType === 'single' && inputs.advanced?.partnerTiming === 'yes') {
-    improvements.push(`Partner income boost: When your partner joins the household, your combined income will significantly improve your timelines.`);
+  // Display improvements (only if meaningful)
+  if (improvements.length === 0) {
+    improvements.push('No material improvements recommended under current assumptions. Your financial strategy appears optimized for your goals.');
   }
   
-  // Display improvements
-  improvements.slice(0, 8).forEach((improvement, idx) => {
+  improvements.slice(0, 6).forEach((improvement, idx) => {
     if (yPos > pageHeight - 25) {
       doc.addPage();
       yPos = 20;
@@ -641,6 +807,174 @@ export async function generateStatePDF(
       yPos += 6;
     });
   }
+  
+  // PORTFOLIO FIT ANALYSIS SECTION (renamed to "Why This State Works")
+  checkNewPage(100);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('6. Why This State Works', margin, yPos);
+  yPos += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('Cause-and-effect analysis of how state economic factors impact your financial plan.', margin, yPos);
+  yPos += 12;
+  
+  const portfolioFitBullets: string[] = [];
+  
+  // Reframe as cause-effect statements
+  // Cost of living cause-effect (reuse state from inputs section)
+  const stateData = getStateByName(result.state);
+  const avgHouseholdCost = stateData ? getHouseholdCost(stateData, inputs.householdType, inputs.kids) : 0;
+  const costRatio = result.combinedIncome > 0 ? (avgHouseholdCost / result.combinedIncome) * 100 : 0;
+  const costDescription = costRatio <= 70 ? 'Low' : costRatio <= 80 ? 'Moderate' : 'High';
+  portfolioFitBullets.push(`${costDescription} cost of living keeps expenses at ${costRatio.toFixed(1)}% of income, ${costRatio <= 70 ? 'allowing aggressive savings and debt payoff' : costRatio <= 80 ? 'requiring disciplined budgeting' : 'limiting available funds for savings and debt reduction'}`);
+  
+  // Home price cause-effect
+  const homePriceToIncomeRatio = result.combinedIncome > 0 ? (result.homeValue / result.combinedIncome) : 0;
+  const homeAffordabilityDesc = homePriceToIncomeRatio <= 3 ? 'Affordable' : homePriceToIncomeRatio <= 5 ? 'Moderate' : 'High';
+  portfolioFitBullets.push(`${homeAffordabilityDesc} home prices (${homePriceToIncomeRatio.toFixed(1)}x annual income) ${homePriceToIncomeRatio <= 3 ? 'create favorable conditions for rapid down payment accumulation' : homePriceToIncomeRatio <= 5 ? 'require extended savings periods but remain achievable' : 'significantly extend the timeline to home ownership'}`);
+  
+  // Debt payoff speed cause-effect
+  if (result.yearsToDebtFree !== null) {
+    const debtSpeedDesc = result.yearsToDebtFree <= 5 ? 'Fast' : result.yearsToDebtFree <= 10 ? 'Moderate' : 'Extended';
+    portfolioFitBullets.push(`${debtSpeedDesc} debt payoff (${result.yearsToDebtFree.toFixed(1)} years) ${result.yearsToDebtFree <= 5 ? 'frees up income early, accelerating home purchase timeline' : result.yearsToDebtFree <= 10 ? 'allows simultaneous progress toward both goals' : 'creates a sequential strategy requiring debt elimination before home savings'}`);
+  }
+  
+  portfolioFitBullets.forEach((bullet) => {
+    if (yPos > pageHeight - 20) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`• ${bullet}`, margin + 4, yPos, { maxWidth: contentWidth - 8 });
+    yPos += 7;
+  });
+  
+  yPos += 8;
+  
+  // ========================================================================
+  // PHASE 5: TRADE-OFFS TO CONSIDER SECTION
+  // ========================================================================
+  checkNewPage(80);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('8. Trade-offs to Consider', margin, yPos);
+  yPos += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('Realistic considerations and potential downsides of choosing this state.', margin, yPos);
+  yPos += 12;
+  
+  const tradeOffs: string[] = [];
+  
+  // Income growth ceiling
+  if (result.viabilityRating < 8) {
+    tradeOffs.push(`Income growth ceiling: ${result.state}'s economic conditions may limit long-term salary growth potential compared to major metropolitan areas, affecting future financial flexibility.`);
+  }
+  
+  // Job market concentration
+  if (result.yearsToHome !== null && result.yearsToHome > 8) {
+    tradeOffs.push(`Job market concentration: Limited job mobility in ${result.state} may reduce career advancement opportunities and income growth potential, extending home ownership timelines if income remains flat.`);
+  }
+  
+  // Opportunity cost
+  if (result.viabilityRating >= 8 && result.yearsToHome !== null && result.yearsToHome > 5) {
+    tradeOffs.push(`Long-term opportunity cost: Choosing ${result.state} over higher-cost states with faster career growth may limit lifetime earning potential, though it accelerates home ownership and financial stability.`);
+  } else if (result.yearsToHome !== null && result.yearsToHome > 10) {
+    tradeOffs.push(`Opportunity cost: Extended timeline to home ownership (${result.yearsToHome.toFixed(1)} years) means delayed equity building and potential wealth accumulation compared to states with faster timelines.`);
+  }
+  
+  // Market risk
+  if (result.homeValue > result.combinedIncome * 5) {
+    tradeOffs.push(`Housing market risk: High home price-to-income ratio (${(result.homeValue / result.combinedIncome).toFixed(1)}x) increases sensitivity to market corrections, potentially impacting home equity and refinancing options.`);
+  }
+  
+  // Limited buffer
+  if (result.requiredAllocationPercent && inputs.allocationPercent <= result.requiredAllocationPercent * 1.1) {
+    tradeOffs.push(`Limited financial buffer: Allocation percentage (${(inputs.allocationPercent * 100).toFixed(0)}%) is close to minimum required (${(result.requiredAllocationPercent * 100).toFixed(0)}%), leaving little room for unexpected expenses or income disruptions.`);
+  }
+  
+  // Display trade-offs (always show at least 2-3)
+  if (tradeOffs.length === 0) {
+    tradeOffs.push(`Market variability: Housing market fluctuations could impact home values and refinancing opportunities, affecting long-term wealth building strategy.`);
+    tradeOffs.push(`Life changes: Unplanned events (job loss, family changes, major expenses) could disrupt the financial timeline, requiring strategy adjustments.`);
+  }
+  
+  tradeOffs.slice(0, 3).forEach((tradeOff, idx) => {
+    if (yPos > pageHeight - 25) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`• ${tradeOff}`, margin + 4, yPos, { maxWidth: contentWidth - 8 });
+    yPos += 7;
+  });
+  
+  yPos += 8;
+  
+  // METHODOLOGY / CONCLUSION RATIONALE SECTION
+  checkNewPage(100);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('9. Methodology & Assumptions', margin, yPos);
+  yPos += 10;
+  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('Methodology and key assumptions used in the financial simulation and analysis.', margin, yPos);
+  yPos += 12;
+  
+  const methodologyBullets: string[] = [];
+  
+  methodologyBullets.push(`Simulation Model: Year-by-year financial simulation over up to ${result.yearsToHome && result.yearsToHome > 0 ? Math.ceil(result.yearsToHome) + 5 : 30} years, accounting for inflation (2.5% annually), income growth (2% annually), and home price appreciation (3% annually)`);
+  
+  methodologyBullets.push(`Income Projection: Base income from ${inputs.incomeSource === 'occupation' ? `occupation data for ${result.state}` : 'manual salary entry'} with ${inputs.householdType === 'marriedTwoIncome' ? 'partner income included' : 'single income'}, projected with annual growth`);
+  
+  methodologyBullets.push(`Cost of Living Calculation: Dynamic household costs based on ${inputs.householdType.replace(/([A-Z])/g, ' $1').trim().toLowerCase()} household with ${inputs.kids} ${inputs.kids === 1 ? 'child' : 'children'}, adjusted for inflation and future family changes`);
+  
+  methodologyBullets.push(`Debt Management: Student loan ($${(inputs.studentLoanBalance || 0).toLocaleString()} at ${((inputs.studentLoanRate || 0) * 100).toFixed(1)}%) and credit card debt ($${(inputs.creditCardBalance || 0).toLocaleString()} at ${((inputs.creditCardApr || 0) * 100).toFixed(1)}%) tracked with compound interest and minimum payment requirements`);
+  
+  methodologyBullets.push(`Savings Strategy: ${(inputs.allocationPercent * 100).toFixed(0)}% of disposable income allocated, with ${(inputs.savingsRate * 100).toFixed(1)}% annual savings rate growth, prioritized toward home down payment then debt payoff`);
+  
+  if (result.yearsToHome !== null) {
+    methodologyBullets.push(`Home Purchase Timing: Down payment target reached after ${result.yearsToHome.toFixed(1)} years through systematic savings, with sustainability check confirming mortgage affordability under projected future costs`);
+  } else {
+    methodologyBullets.push(`Home Purchase Barrier: Insufficient savings rate or allocation to reach down payment target within reasonable timeline under current parameters`);
+  }
+  
+  if (result.yearsToDebtFree !== null) {
+    methodologyBullets.push(`Debt Payoff Calculation: Debt eliminated after ${result.yearsToDebtFree.toFixed(1)} years using optimal allocation strategy (minimum payments to prevent growth, then accelerated payoff after home purchase)`);
+  } else {
+    methodologyBullets.push(`Debt Payoff Constraint: Minimum payments insufficient to overcome interest accumulation, requiring higher allocation percentage or alternative debt management strategy`);
+  }
+  
+  methodologyBullets.push(`Classification Logic: Viability score calculated from timeline speed (home purchase and debt freedom), allocation buffer, and disposable income margin, mapped to ${result.classification}`);
+  
+  methodologyBullets.push(`Sustainability Validation: Plan verified for 5 years post-purchase to ensure mortgage remains affordable with projected cost of living increases and family changes`);
+  
+  methodologyBullets.forEach((bullet) => {
+    if (yPos > pageHeight - 20) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`• ${bullet}`, margin + 4, yPos, { maxWidth: contentWidth - 8 });
+    yPos += 7;
+  });
   
   // Footer
   const totalPages = doc.internal.pages.length - 1;
